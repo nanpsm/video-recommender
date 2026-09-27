@@ -23,6 +23,9 @@ LIKED_THRESHOLD = 4.0  # a test rating >= 4.0 counts as "the user liked it"
 MIN_MOVIE_RATINGS = 5  # filter out movies with fewer ratings; one or two
                        # ratings can produce extreme ALS factors that dominate
                        # recommendations even with regularisation
+SAVE_MODEL = True    # save the trained model to disk after training
+MODEL_DIR = "models/als"          # Spark saves a folder, not a single file
+POPULARITY_DIR = "models/popularity"  # also save popularity stats for the API
 
 # Small grid to keep runtime and memory modest on a laptop.
 # rank     = number of latent "taste" factors per user and movie
@@ -190,6 +193,23 @@ def main():
     (als_recs.filter(F.col("userId") == user)
         .join(movies, "movieId").select("title", "genres")
         .show(K, truncate=False))
+
+    # ---- Save model ----
+    if SAVE_MODEL:
+        # Spark saves a model as a folder, not a single file.
+        # Inside MODEL_DIR you'll see:
+        #   metadata/  — hyperparameters and Spark version info (JSON)
+        #   itemFactors/ — the movie latent factor matrix (Parquet)
+        #   userFactors/ — the user latent factor matrix (Parquet)
+        # To load it later: ALSModel.load(MODEL_DIR)
+        model.save(MODEL_DIR)
+        print(f"\nALS model saved to {MODEL_DIR}/")
+
+        # Save movie popularity stats (used by the baseline in the API).
+        # We save as Parquet — Spark's native columnar format, faster to
+        # read back than CSV and preserves column types exactly.
+        movie_stats.write.mode("overwrite").parquet(POPULARITY_DIR)
+        print(f"Popularity stats saved to {POPULARITY_DIR}/")
 
     spark.stop()
 
