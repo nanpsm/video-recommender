@@ -44,18 +44,18 @@ const ALL_FILMS = [
   { id: 1,     tmdbId: 862,   title: 'Toy Story',                      year: 1995, genres: ['Animation', 'Comedy'] },
   { id: 1721,  tmdbId: 329,   title: 'Jurassic Park',                  year: 1993, genres: ['Adventure', 'Sci-Fi'] },
   { id: 527,   tmdbId: 424,   title: "Schindler's List",               year: 1993, genres: ['Drama', 'War'] },
-  { id: 589,   tmdbId: 218,   title: 'Terminator 2: Judgment Day',     year: 1991, genres: ['Action', 'Sci-Fi'] },
+  { id: 589,   tmdbId: 280,   title: 'Terminator 2: Judgment Day',     year: 1991, genres: ['Action', 'Sci-Fi'] },
   { id: 1270,  tmdbId: 807,   title: 'Se7en',                          year: 1995, genres: ['Crime', 'Mystery', 'Thriller'] },
   { id: 858,   tmdbId: 238,   title: 'The Godfather',                  year: 1972, genres: ['Crime', 'Drama'] },
-  { id: 1196,  tmdbId: 601,   title: 'The Good, the Bad and the Ugly', year: 1966, genres: ['Adventure', 'Western'] },
+  { id: 1196,  tmdbId: 429,   title: 'The Good, the Bad and the Ugly', year: 1966, genres: ['Adventure', 'Western'] },
   { id: 1197,  tmdbId: 240,   title: 'The Godfather Part II',          year: 1974, genres: ['Crime', 'Drama'] },
-  { id: 2028,  tmdbId: 78,    title: 'Saving Private Ryan',            year: 1998, genres: ['Action', 'Drama', 'War'] },
+  { id: 2028,  tmdbId: 857,   title: 'Saving Private Ryan',            year: 1998, genres: ['Action', 'Drama', 'War'] },
   { id: 1617,  tmdbId: 497,   title: 'The Green Mile',                 year: 1999, genres: ['Crime', 'Drama', 'Fantasy'] },
   { id: 150,   tmdbId: 105,   title: 'Back to the Future',             year: 1985, genres: ['Adventure', 'Comedy', 'Sci-Fi'] },
   { id: 1210,  tmdbId: 1891,  title: 'The Empire Strikes Back',        year: 1980, genres: ['Action', 'Adventure', 'Sci-Fi'] },
   { id: 592,   tmdbId: 348,   title: 'Alien',                          year: 1979, genres: ['Horror', 'Sci-Fi'] },
   { id: 3578,  tmdbId: 9806,  title: 'The Incredibles',                year: 2004, genres: ['Action', 'Animation', 'Comedy'] },
-  { id: 110,   tmdbId: 816,   title: 'Braveheart',                     year: 1995, genres: ['Action', 'Drama', 'War'] },
+  { id: 110,   tmdbId: 197,   title: 'Braveheart',                     year: 1995, genres: ['Action', 'Drama', 'War'] },
   { id: 2078,  tmdbId: 335984,title: 'Blade Runner 2049',              year: 2017, genres: ['Drama', 'Mystery', 'Sci-Fi'] },
   { id: 1573,  tmdbId: 289,   title: 'Casablanca',                     year: 1942, genres: ['Drama', 'Romance', 'War'] },
   { id: 7361,  tmdbId: 49026, title: 'The Dark Knight Rises',          year: 2012, genres: ['Action', 'Crime', 'Drama'] },
@@ -63,11 +63,11 @@ const ALL_FILMS = [
   { id: 4306,  tmdbId: 10681, title: 'WALL·E',                         year: 2008, genres: ['Animation', 'Comedy', 'Sci-Fi'] },
   { id: 8961,  tmdbId: 99861, title: 'Avengers: Age of Ultron',        year: 2015, genres: ['Action', 'Adventure', 'Sci-Fi'] },
   { id: 3386,  tmdbId: 16869, title: 'Inglourious Basterds',           year: 2009, genres: ['Adventure', 'Drama', 'War'] },
-  { id: 1704,  tmdbId: 534,   title: 'Psycho',                         year: 1960, genres: ['Horror', 'Mystery', 'Thriller'] },
-  { id: 2394,  tmdbId: 8966,  title: 'The Prestige',                   year: 2006, genres: ['Drama', 'Mystery', 'Thriller'] },
-  { id: 3793,  tmdbId: 1164,  title: 'No Country for Old Men',         year: 2007, genres: ['Crime', 'Drama', 'Thriller'] },
-  { id: 3255,  tmdbId: 914,   title: 'The Grand Budapest Hotel',       year: 2014, genres: ['Adventure', 'Comedy', 'Crime'] },
-  { id: 1370,  tmdbId: 637,   title: 'La La Land',                     year: 2016, genres: ['Comedy', 'Drama', 'Musical'] },
+  { id: 1704,  tmdbId: 539,   title: 'Psycho',                         year: 1960, genres: ['Horror', 'Mystery', 'Thriller'] },
+  { id: 2394,  tmdbId: 1124,   title: 'The Prestige',                   year: 2006, genres: ['Drama', 'Mystery', 'Thriller'] },
+  { id: 3793,  tmdbId: 6977,  title: 'No Country for Old Men',         year: 2007, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 3255,  tmdbId: 259316,title: 'The Grand Budapest Hotel',       year: 2014, genres: ['Adventure', 'Comedy', 'Crime'] },
+  { id: 1370,  tmdbId: 313369,title: 'La La Land',                     year: 2016, genres: ['Comedy', 'Drama', 'Musical'] },
   { id: 5349,  tmdbId: 157336,title: 'Interstellar',                   year: 2014, genres: ['Adventure', 'Drama', 'Sci-Fi'] },
   { id: 6539,  tmdbId: 286217,title: 'The Martian',                    year: 2015, genres: ['Drama', 'Sci-Fi'] },
   { id: 6874,  tmdbId: 118340,title: 'Guardians of the Galaxy',        year: 2014, genres: ['Action', 'Adventure', 'Comedy'] },
@@ -78,9 +78,9 @@ const ALL_FILMS = [
   { id: 131724,tmdbId: 205596,title: 'The Imitation Game',             year: 2014, genres: ['Drama', 'Thriller', 'War'] },
   { id: 139385,tmdbId: 260513,title: 'Incredibles 2',                  year: 2018, genres: ['Action', 'Animation', 'Comedy'] },
   { id: 33794, tmdbId: 1422,  title: 'The Departed',                   year: 2006, genres: ['Crime', 'Drama', 'Thriller'] },
-  { id: 5418,  tmdbId: 4995,  title: 'Cast Away',                      year: 2000, genres: ['Adventure', 'Drama'] },
+  { id: 5418,  tmdbId: 8358,  title: 'Cast Away',                      year: 2000, genres: ['Adventure', 'Drama'] },
   { id: 7099,  tmdbId: 14,    title: 'American Beauty',                year: 1999, genres: ['Drama', 'Romance'] },
-  { id: 91529, tmdbId: 87101, title: 'The Terminator',                 year: 1984, genres: ['Action', 'Sci-Fi'] },
+  { id: 91529, tmdbId: 218,   title: 'The Terminator',                 year: 1984, genres: ['Action', 'Sci-Fi'] },
 ]
 
 // Deduplicate by tmdbId and pick 12 random films per session
@@ -262,6 +262,28 @@ export default function Home() {
         return { title, year }
       }
 
+      function normalize(s: string) {
+        return s.toLowerCase().replace(/[^a-z0-9]/g, '')
+      }
+
+      function bestMatch(results: Array<{ id: number; title?: string; original_title?: string; release_date?: string; poster_path?: string; overview?: string }>, title: string, year: string) {
+        const normTarget = normalize(title)
+        const targetYear = parseInt(year, 10)
+        let best: typeof results[0] | null = null
+        let bestScore = -1
+        for (const r of results) {
+          const normTitle = normalize(r.title ?? '')
+          const normOrig  = normalize(r.original_title ?? '')
+          const releaseYear = r.release_date ? parseInt(r.release_date.slice(0, 4), 10) : 0
+          const titleMatch = normTitle === normTarget || normOrig === normTarget ? 2
+            : normTitle.includes(normTarget) || normTarget.includes(normTitle) ? 1 : 0
+          const yearMatch = targetYear && releaseYear ? (Math.abs(releaseYear - targetYear) <= 1 ? 2 : Math.abs(releaseYear - targetYear) <= 3 ? 1 : 0) : 1
+          const score = titleMatch * 3 + yearMatch
+          if (titleMatch > 0 && score > bestScore) { bestScore = score; best = r }
+        }
+        return best ?? results[0] ?? null
+      }
+
       async function fetchMovieData(movieId: number, rawTitle: string): Promise<{ id: number; poster: string | null; overview: string; cast: string[] }> {
         const { title, year } = parseTitle(rawTitle)
         const base = 'https://api.themoviedb.org/3/search/movie'
@@ -273,7 +295,8 @@ export default function Home() {
         for (const q of [`${base}?query=${encodeURIComponent(title)}&year=${year}&page=1`, `${base}?query=${encodeURIComponent(title)}&page=1`]) {
           try {
             const d = await fetch(q, { headers }).then(r => r.json())
-            const hit = d.results?.[0]
+            const results = d.results ?? []
+            const hit = bestMatch(results, title, year)
             if (hit) {
               tmdbId   = hit.id
               overview = hit.overview ?? ''
