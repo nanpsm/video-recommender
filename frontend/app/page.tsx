@@ -554,6 +554,7 @@ export default function Home() {
           background: '#fff', borderRadius: 20, border: `1px solid ${BORDER}`,
           boxShadow: '0 24px 64px rgba(26,24,20,0.18)',
           width: '100%', maxWidth: 540, overflow: 'hidden',
+          maxHeight: 'calc(100vh - 48px)', display: 'flex', flexDirection: 'column',
         }}
       >
         {/* Accent stripe */}
@@ -567,7 +568,7 @@ export default function Home() {
           </div>
           <button onClick={() => setModal(null)} style={{ background: CREAM, border: `1px solid ${BORDER}`, cursor: 'pointer', color: MUTED, width: 32, height: 32, borderRadius: 8, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
         </div>
-        <div style={{ padding: '0 24px 24px' }}>
+        <div style={{ padding: '0 24px 24px', overflowY: 'auto', flex: 1 }}>
           {modal === 'tasteDNA' ? (() => {
             const sorted = Object.entries(userVec)
               .filter(([, v]) => v > 0)
@@ -1505,32 +1506,32 @@ export default function Home() {
         if (counterfactuals.length === 0) return null
 
         return (
-          <div style={{ borderTop: '1px solid #1A1612', background: '#0E0C0A' }}>
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', background: '#0E0C0A' }}>
             <button
               onClick={() => setShowCounterfactual(v => !v)}
-              style={{ width: '100%', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              style={{ width: '100%', padding: '16px 20px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>What would change your twin?</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', background: 'rgba(255,255,255,0.04)', border: '1px solid #2A2520', borderRadius: 4, padding: '2px 8px' }}>{counterfactuals.length} scenarios</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: ACCENT, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 700 }}>What would change your twin?</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: ACCENT, background: 'rgba(194,65,12,0.18)', border: `1px solid rgba(194,65,12,0.35)`, borderRadius: 4, padding: '2px 8px' }}>{counterfactuals.length} scenarios</span>
               </div>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#3A3530' }}>{showCounterfactual ? '▲' : '▼'}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: ACCENT }}>{showCounterfactual ? '▲' : '▼'}</span>
             </button>
             {showCounterfactual && (
               <div style={{ padding: '0 20px 20px' }}>
-                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 14 }}>
                   Genre matching only · does not include ALS scores
                 </p>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 {counterfactuals.slice(0, 4).map(({ film, newTwin, newSim }) => (
-                  <div key={film.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1E1A16', borderRadius: 10, padding: '14px 16px', minWidth: 200, flex: '1 1 200px' }}>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>If you'd skipped</div>
-                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 15, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 10, lineHeight: 1.1 }}>{film.title}</div>
-                    <div style={{ height: 1, background: '#1E1A16', marginBottom: 10 }} />
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>New twin</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                      <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 26, color: ACCENT, lineHeight: 1 }}>#{newTwin}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#4A443E' }}>{Math.round(newSim * 100)}% match</span>
+                  <div key={film.id} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, padding: '18px 20px', minWidth: 200, flex: '1 1 200px' }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 8 }}>If you&apos;d skipped</div>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 18, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 16, lineHeight: 1.1 }}>{film.title}</div>
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 14 }} />
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>New twin</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                      <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 36, color: ACCENT, lineHeight: 1 }}>#{newTwin}</span>
+                      <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>{Math.round(newSim * 100)}% match</span>
                     </div>
                   </div>
                 ))}

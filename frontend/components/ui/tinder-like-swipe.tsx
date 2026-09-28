@@ -118,7 +118,7 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
           const globalIndex = cards.indexOf(card)
           const isTopCard = visibleIndex === visibleCards.length - 1
           const direction = dragDirections[globalIndex]
-          const offset = stackOffsets[visibleIndex] ?? stackOffsets[0]
+          const offset = stackOffsets[stackOffsets.length - (visibleCards.length - visibleIndex)] ?? stackOffsets[0]
           return (
             <motion.div
               key={`${card.img}-${card.originalIndex}`}
