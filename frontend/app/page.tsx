@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { supabase, Recommendation } from '@/lib/supabase'
 import { SwipeableCardStack, SwipeableCardStackHandle } from '@/components/ui/tinder-like-swipe'
 
@@ -31,72 +32,130 @@ const GENRE_GRADIENT: Record<string, [string, string]> = {
   Fantasy:   ['#D4C8E3', '#B8A5CE'],
 }
 
+// Each film appears once. Genres array covers all applicable categories so
+// pickSessionFilms can pull it for any of its genres.
+// Every KEY_GENRE has 10+ films in the pool.
 const ALL_FILMS = [
-  { id: 318,   tmdbId: 278,   title: 'The Shawshank Redemption',      year: 1994, genres: ['Drama'] },
-  { id: 296,   tmdbId: 680,   title: 'Pulp Fiction',                   year: 1994, genres: ['Crime', 'Drama'] },
-  { id: 2571,  tmdbId: 603,   title: 'The Matrix',                     year: 1999, genres: ['Action', 'Sci-Fi'] },
-  { id: 356,   tmdbId: 13,    title: 'Forrest Gump',                   year: 1994, genres: ['Comedy', 'Drama'] },
-  { id: 260,   tmdbId: 11,    title: 'Star Wars: A New Hope',          year: 1977, genres: ['Action', 'Adventure'] },
-  { id: 593,   tmdbId: 274,   title: 'The Silence of the Lambs',       year: 1991, genres: ['Crime', 'Horror'] },
-  { id: 4993,  tmdbId: 120,   title: 'The Lord of the Rings',          year: 2001, genres: ['Adventure', 'Drama'] },
-  { id: 58559, tmdbId: 155,   title: 'The Dark Knight',                year: 2008, genres: ['Action', 'Crime'] },
-  { id: 79132, tmdbId: 27205, title: 'Inception',                      year: 2010, genres: ['Action', 'Mystery'] },
-  { id: 2959,  tmdbId: 550,   title: 'Fight Club',                     year: 1999, genres: ['Drama', 'Thriller'] },
-  { id: 1,     tmdbId: 862,   title: 'Toy Story',                      year: 1995, genres: ['Animation', 'Comedy'] },
-  { id: 1721,  tmdbId: 329,   title: 'Jurassic Park',                  year: 1993, genres: ['Adventure', 'Sci-Fi'] },
-  { id: 527,   tmdbId: 424,   title: "Schindler's List",               year: 1993, genres: ['Drama', 'War'] },
-  { id: 589,   tmdbId: 280,   title: 'Terminator 2: Judgment Day',     year: 1991, genres: ['Action', 'Sci-Fi'] },
-  { id: 1270,  tmdbId: 807,   title: 'Se7en',                          year: 1995, genres: ['Crime', 'Mystery', 'Thriller'] },
-  { id: 858,   tmdbId: 238,   title: 'The Godfather',                  year: 1972, genres: ['Crime', 'Drama'] },
-  { id: 1196,  tmdbId: 429,   title: 'The Good, the Bad and the Ugly', year: 1966, genres: ['Adventure', 'Western'] },
-  { id: 1197,  tmdbId: 240,   title: 'The Godfather Part II',          year: 1974, genres: ['Crime', 'Drama'] },
-  { id: 2028,  tmdbId: 857,   title: 'Saving Private Ryan',            year: 1998, genres: ['Action', 'Drama', 'War'] },
-  { id: 1617,  tmdbId: 497,   title: 'The Green Mile',                 year: 1999, genres: ['Crime', 'Drama', 'Fantasy'] },
-  { id: 150,   tmdbId: 105,   title: 'Back to the Future',             year: 1985, genres: ['Adventure', 'Comedy', 'Sci-Fi'] },
-  { id: 1210,  tmdbId: 1891,  title: 'The Empire Strikes Back',        year: 1980, genres: ['Action', 'Adventure', 'Sci-Fi'] },
-  { id: 592,   tmdbId: 348,   title: 'Alien',                          year: 1979, genres: ['Horror', 'Sci-Fi'] },
-  { id: 3578,  tmdbId: 9806,  title: 'The Incredibles',                year: 2004, genres: ['Action', 'Animation', 'Comedy'] },
-  { id: 110,   tmdbId: 197,   title: 'Braveheart',                     year: 1995, genres: ['Action', 'Drama', 'War'] },
-  { id: 2078,  tmdbId: 335984,title: 'Blade Runner 2049',              year: 2017, genres: ['Drama', 'Mystery', 'Sci-Fi'] },
-  { id: 1573,  tmdbId: 289,   title: 'Casablanca',                     year: 1942, genres: ['Drama', 'Romance', 'War'] },
-  { id: 7361,  tmdbId: 49026, title: 'The Dark Knight Rises',          year: 2012, genres: ['Action', 'Crime', 'Drama'] },
-  { id: 6016,  tmdbId: 24428, title: 'The Avengers',                   year: 2012, genres: ['Action', 'Adventure', 'Sci-Fi'] },
-  { id: 4306,  tmdbId: 10681, title: 'WALL·E',                         year: 2008, genres: ['Animation', 'Comedy', 'Sci-Fi'] },
-  { id: 8961,  tmdbId: 99861, title: 'Avengers: Age of Ultron',        year: 2015, genres: ['Action', 'Adventure', 'Sci-Fi'] },
-  { id: 3386,  tmdbId: 16869, title: 'Inglourious Basterds',           year: 2009, genres: ['Adventure', 'Drama', 'War'] },
-  { id: 1704,  tmdbId: 539,   title: 'Psycho',                         year: 1960, genres: ['Horror', 'Mystery', 'Thriller'] },
-  { id: 2394,  tmdbId: 1124,   title: 'The Prestige',                   year: 2006, genres: ['Drama', 'Mystery', 'Thriller'] },
-  { id: 3793,  tmdbId: 6977,  title: 'No Country for Old Men',         year: 2007, genres: ['Crime', 'Drama', 'Thriller'] },
-  { id: 3255,  tmdbId: 259316,title: 'The Grand Budapest Hotel',       year: 2014, genres: ['Adventure', 'Comedy', 'Crime'] },
-  { id: 1370,  tmdbId: 313369,title: 'La La Land',                     year: 2016, genres: ['Comedy', 'Drama', 'Musical'] },
-  { id: 5349,  tmdbId: 157336,title: 'Interstellar',                   year: 2014, genres: ['Adventure', 'Drama', 'Sci-Fi'] },
-  { id: 6539,  tmdbId: 286217,title: 'The Martian',                    year: 2015, genres: ['Drama', 'Sci-Fi'] },
-  { id: 6874,  tmdbId: 118340,title: 'Guardians of the Galaxy',        year: 2014, genres: ['Action', 'Adventure', 'Comedy'] },
-  { id: 193581,tmdbId: 264660,title: 'Ex Machina',                     year: 2015, genres: ['Drama', 'Sci-Fi', 'Thriller'] },
-  { id: 106696,tmdbId: 244786,title: 'Whiplash',                       year: 2014, genres: ['Drama', 'Musical'] },
-  { id: 114935,tmdbId: 76341, title: 'Mad Max: Fury Road',             year: 2015, genres: ['Action', 'Adventure', 'Sci-Fi'] },
-  { id: 122904,tmdbId: 194662,title: 'Birdman',                        year: 2014, genres: ['Comedy', 'Drama'] },
-  { id: 131724,tmdbId: 205596,title: 'The Imitation Game',             year: 2014, genres: ['Drama', 'Thriller', 'War'] },
-  { id: 139385,tmdbId: 260513,title: 'Incredibles 2',                  year: 2018, genres: ['Action', 'Animation', 'Comedy'] },
-  { id: 33794, tmdbId: 1422,  title: 'The Departed',                   year: 2006, genres: ['Crime', 'Drama', 'Thriller'] },
-  { id: 5418,  tmdbId: 8358,  title: 'Cast Away',                      year: 2000, genres: ['Adventure', 'Drama'] },
-  { id: 7099,  tmdbId: 14,    title: 'American Beauty',                year: 1999, genres: ['Drama', 'Romance'] },
-  { id: 91529, tmdbId: 218,   title: 'The Terminator',                 year: 1984, genres: ['Action', 'Sci-Fi'] },
+  // Action
+  { id: 2571,   tmdbId: 603,    title: 'The Matrix',                          year: 1999, genres: ['Action', 'Sci-Fi'] },
+  { id: 260,    tmdbId: 11,     title: 'Star Wars: A New Hope',               year: 1977, genres: ['Action', 'Adventure'] },
+  { id: 58559,  tmdbId: 155,    title: 'The Dark Knight',                     year: 2008, genres: ['Action', 'Crime', 'Drama'] },
+  { id: 79132,  tmdbId: 27205,  title: 'Inception',                           year: 2010, genres: ['Action', 'Mystery', 'Sci-Fi'] },
+  { id: 589,    tmdbId: 280,    title: 'Terminator 2: Judgment Day',          year: 1991, genres: ['Action', 'Sci-Fi'] },
+  { id: 114935, tmdbId: 76341,  title: 'Mad Max: Fury Road',                  year: 2015, genres: ['Action', 'Adventure', 'Sci-Fi'] },
+  { id: 91529,  tmdbId: 218,    title: 'The Terminator',                      year: 1984, genres: ['Action', 'Sci-Fi'] },
+  { id: 1345,   tmdbId: 562,    title: 'Die Hard',                            year: 1988, genres: ['Action', 'Thriller'] },
+  { id: 3527,   tmdbId: 98,     title: 'Gladiator',                           year: 2000, genres: ['Action', 'Adventure', 'Drama'] },
+  { id: 116797, tmdbId: 245891, title: 'John Wick',                           year: 2014, genres: ['Action', 'Crime', 'Thriller'] },
+  // Comedy
+  { id: 356,    tmdbId: 13,     title: 'Forrest Gump',                        year: 1994, genres: ['Comedy', 'Drama', 'Romance'] },
+  { id: 3255,   tmdbId: 120467, title: 'The Grand Budapest Hotel',            year: 2014, genres: ['Adventure', 'Comedy', 'Crime'] },
+  { id: 150,    tmdbId: 105,    title: 'Back to the Future',                  year: 1985, genres: ['Adventure', 'Comedy', 'Sci-Fi'] },
+  { id: 6874,   tmdbId: 118340, title: 'Guardians of the Galaxy',             year: 2014, genres: ['Action', 'Adventure', 'Comedy', 'Sci-Fi'] },
+  { id: 586,    tmdbId: 772,    title: 'Home Alone',                          year: 1990, genres: ['Children', 'Comedy'] },
+  { id: 520,    tmdbId: 831,    title: 'When Harry Met Sally',                year: 1989, genres: ['Comedy', 'Romance'] },
+  { id: 2115,   tmdbId: 115,    title: 'The Big Lebowski',                    year: 1998, genres: ['Comedy', 'Crime'] },
+  { id: 329,    tmdbId: 1590,   title: 'Groundhog Day',                       year: 1993, genres: ['Comedy', 'Fantasy', 'Romance'] },
+  { id: 1917,   tmdbId: 37165,  title: 'The Truman Show',                     year: 1998, genres: ['Comedy', 'Drama', 'Sci-Fi'] },
+  { id: 122904, tmdbId: 194662, title: 'Birdman',                             year: 2014, genres: ['Comedy', 'Drama'] },
+  // Drama
+  { id: 318,    tmdbId: 278,    title: 'The Shawshank Redemption',            year: 1994, genres: ['Drama'] },
+  { id: 296,    tmdbId: 680,    title: 'Pulp Fiction',                        year: 1994, genres: ['Crime', 'Drama'] },
+  { id: 2959,   tmdbId: 550,    title: 'Fight Club',                          year: 1999, genres: ['Drama', 'Thriller'] },
+  { id: 858,    tmdbId: 238,    title: 'The Godfather',                       year: 1972, genres: ['Crime', 'Drama'] },
+  { id: 1221,   tmdbId: 769,    title: 'Goodfellas',                          year: 1990, genres: ['Crime', 'Drama'] },
+  { id: 1213,   tmdbId: 389,    title: '12 Angry Men',                        year: 1957, genres: ['Drama'] },
+  { id: 106696, tmdbId: 244786, title: 'Whiplash',                            year: 2014, genres: ['Drama', 'Musical'] },
+  { id: 1204,   tmdbId: 489,    title: 'Good Will Hunting',                   year: 1997, genres: ['Drama', 'Romance'] },
+  { id: 7099,   tmdbId: 14,     title: 'American Beauty',                     year: 1999, genres: ['Drama', 'Romance'] },
+  { id: 5418,   tmdbId: 8358,   title: 'Cast Away',                           year: 2000, genres: ['Adventure', 'Drama'] },
+  // Horror
+  { id: 593,    tmdbId: 274,    title: 'The Silence of the Lambs',            year: 1991, genres: ['Crime', 'Horror', 'Thriller'] },
+  { id: 592,    tmdbId: 348,    title: 'Alien',                               year: 1979, genres: ['Horror', 'Sci-Fi'] },
+  { id: 1704,   tmdbId: 539,    title: 'Psycho',                              year: 1960, genres: ['Horror', 'Mystery', 'Thriller'] },
+  { id: 1258,   tmdbId: 694,    title: 'The Shining',                         year: 1980, genres: ['Drama', 'Horror'] },
+  { id: 931,    tmdbId: 9552,   title: 'The Exorcist',                        year: 1973, genres: ['Horror'] },
+  { id: 2762,   tmdbId: 745,    title: 'The Sixth Sense',                     year: 1999, genres: ['Drama', 'Horror', 'Mystery', 'Thriller'] },
+  { id: 588,    tmdbId: 578,    title: 'Jaws',                                year: 1975, genres: ['Horror', 'Thriller'] },
+  { id: 174055, tmdbId: 419430, title: 'Get Out',                             year: 2017, genres: ['Horror', 'Mystery', 'Thriller'] },
+  { id: 1219,   tmdbId: 948,    title: 'Halloween',                           year: 1978, genres: ['Horror', 'Thriller'] },
+  { id: 1988,   tmdbId: 4765,   title: 'A Nightmare on Elm Street',           year: 1984, genres: ['Horror'] },
+  // Sci-Fi
+  { id: 1721,   tmdbId: 329,    title: 'Jurassic Park',                       year: 1993, genres: ['Adventure', 'Sci-Fi'] },
+  { id: 5349,   tmdbId: 157336, title: 'Interstellar',                        year: 2014, genres: ['Adventure', 'Drama', 'Sci-Fi'] },
+  { id: 6539,   tmdbId: 286217, title: 'The Martian',                         year: 2015, genres: ['Drama', 'Sci-Fi'] },
+  { id: 193581, tmdbId: 264660, title: 'Ex Machina',                          year: 2015, genres: ['Drama', 'Sci-Fi', 'Thriller'] },
+  { id: 2078,   tmdbId: 335984, title: 'Blade Runner 2049',                   year: 2017, genres: ['Drama', 'Mystery', 'Sci-Fi'] },
+  { id: 4306,   tmdbId: 10681,  title: 'WALL·E',                              year: 2008, genres: ['Animation', 'Comedy', 'Sci-Fi'] },
+  { id: 1210,   tmdbId: 1891,   title: 'The Empire Strikes Back',             year: 1980, genres: ['Action', 'Adventure', 'Sci-Fi'] },
+  { id: 6016,   tmdbId: 24428,  title: 'The Avengers',                        year: 2012, genres: ['Action', 'Adventure', 'Sci-Fi'] },
+  { id: 7254,   tmdbId: 38,     title: 'Eternal Sunshine of the Spotless Mind', year: 2004, genres: ['Drama', 'Romance', 'Sci-Fi'] },
+  { id: 8961,   tmdbId: 99861,  title: 'Avengers: Age of Ultron',             year: 2015, genres: ['Action', 'Adventure', 'Sci-Fi'] },
+  // Animation
+  { id: 1,      tmdbId: 862,    title: 'Toy Story',                           year: 1995, genres: ['Animation', 'Comedy'] },
+  { id: 3578,   tmdbId: 9806,   title: 'The Incredibles',                     year: 2004, genres: ['Action', 'Animation', 'Comedy'] },
+  { id: 139385, tmdbId: 260513, title: 'Incredibles 2',                       year: 2018, genres: ['Action', 'Animation', 'Comedy'] },
+  { id: 6377,   tmdbId: 12,     title: 'Finding Nemo',                        year: 2003, genres: ['Animation', 'Comedy'] },
+  { id: 5971,   tmdbId: 129,    title: 'Spirited Away',                       year: 2001, genres: ['Animation', 'Adventure', 'Fantasy'] },
+  { id: 364,    tmdbId: 8587,   title: 'The Lion King',                       year: 1994, genres: ['Animation', 'Drama', 'Musical'] },
+  { id: 68954,  tmdbId: 14160,  title: 'Up',                                  year: 2009, genres: ['Animation', 'Adventure', 'Comedy'] },
+  { id: 4886,   tmdbId: 808,    title: 'Shrek',                               year: 2001, genres: ['Animation', 'Comedy', 'Fantasy'] },
+  { id: 4896,   tmdbId: 585,    title: 'Monsters, Inc.',                      year: 2001, genres: ['Animation', 'Comedy'] },
+  { id: 3114,   tmdbId: 920,    title: 'Toy Story 2',                         year: 1999, genres: ['Animation', 'Comedy'] },
+  // Crime
+  { id: 1270,   tmdbId: 807,    title: 'Se7en',                               year: 1995, genres: ['Crime', 'Mystery', 'Thriller'] },
+  { id: 1197,   tmdbId: 240,    title: 'The Godfather Part II',               year: 1974, genres: ['Crime', 'Drama'] },
+  { id: 33794,  tmdbId: 1422,   title: 'The Departed',                        year: 2006, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 3793,   tmdbId: 6977,   title: 'No Country for Old Men',              year: 2007, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 432,    tmdbId: 949,    title: 'Heat',                                year: 1995, genres: ['Action', 'Crime', 'Drama', 'Thriller'] },
+  { id: 899,    tmdbId: 12493,  title: 'The Usual Suspects',                  year: 1995, genres: ['Crime', 'Mystery', 'Thriller'] },
+  { id: 1617,   tmdbId: 497,    title: 'The Green Mile',                      year: 1999, genres: ['Crime', 'Drama', 'Fantasy'] },
+  { id: 2692,   tmdbId: 4995,   title: 'Run Lola Run',                        year: 1998, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 111759, tmdbId: 210577, title: 'Gone Girl',                           year: 2014, genres: ['Crime', 'Drama', 'Mystery', 'Thriller'] },
+  { id: 7361,   tmdbId: 49026,  title: 'The Dark Knight Rises',               year: 2012, genres: ['Action', 'Crime', 'Drama'] },
+  // Thriller
+  { id: 2394,   tmdbId: 1124,   title: 'The Prestige',                        year: 2006, genres: ['Drama', 'Mystery', 'Thriller'] },
+  { id: 131724, tmdbId: 205596, title: 'The Imitation Game',                  year: 2014, genres: ['Drama', 'Thriller', 'War'] },
+  { id: 4226,   tmdbId: 77,     title: 'Memento',                             year: 2000, genres: ['Drama', 'Mystery', 'Thriller'] },
+  // Adventure
+  { id: 4993,   tmdbId: 120,    title: 'The Lord of the Rings',               year: 2001, genres: ['Adventure', 'Drama', 'Fantasy'] },
+  { id: 1196,   tmdbId: 429,    title: 'The Good, the Bad and the Ugly',      year: 1966, genres: ['Adventure', 'Western'] },
+  { id: 3386,   tmdbId: 16869,  title: 'Inglourious Basterds',                year: 2009, genres: ['Adventure', 'Drama', 'War'] },
+  // Romance
+  { id: 1527,   tmdbId: 597,    title: 'Titanic',                             year: 1997, genres: ['Drama', 'Romance'] },
+  { id: 1573,   tmdbId: 289,    title: 'Casablanca',                          year: 1942, genres: ['Drama', 'Romance', 'War'] },
+  { id: 101362, tmdbId: 18491,  title: 'The Notebook',                        year: 2004, genres: ['Drama', 'Romance'] },
+  { id: 1370,   tmdbId: 313369, title: 'La La Land',                          year: 2016, genres: ['Comedy', 'Drama', 'Musical', 'Romance'] },
+  { id: 72998,  tmdbId: 19913,  title: '500 Days of Summer',                  year: 2009, genres: ['Comedy', 'Drama', 'Romance'] },
+  // War
+  { id: 527,    tmdbId: 424,    title: "Schindler's List",                    year: 1993, genres: ['Drama', 'War'] },
+  { id: 2028,   tmdbId: 857,    title: 'Saving Private Ryan',                 year: 1998, genres: ['Action', 'Drama', 'War'] },
+  { id: 110,    tmdbId: 197,    title: 'Braveheart',                          year: 1995, genres: ['Action', 'Drama', 'War'] },
+  { id: 2023,   tmdbId: 28,     title: 'Apocalypse Now',                      year: 1979, genres: ['Drama', 'War'] },
+  { id: 918,    tmdbId: 11236,  title: 'Platoon',                             year: 1986, genres: ['Drama', 'War'] },
+  { id: 1435,   tmdbId: 600,    title: 'Full Metal Jacket',                   year: 1987, genres: ['Drama', 'War'] },
+  { id: 176371, tmdbId: 374720, title: 'Dunkirk',                             year: 2017, genres: ['Action', 'Drama', 'Thriller', 'War'] },
 ]
 
-// Deduplicate by tmdbId and pick 12 random films per session
-function pickSessionFilms(n = 12) {
-  const seen = new Set<number>()
-  const unique = ALL_FILMS.filter(f => {
-    if (seen.has(f.tmdbId)) return false
-    seen.add(f.tmdbId)
-    return true
-  })
-  const shuffled = [...unique].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, n)
+// Pick exactly one random film from each of the 12 key genres
+const KEY_GENRES = ['Action', 'Comedy', 'Drama', 'Horror', 'Sci-Fi', 'Animation', 'Crime', 'Thriller', 'Adventure', 'Romance', 'War', 'Mystery'] as const
+
+function pickSessionFilms() {
+  const used = new Set<number>()
+  const result: typeof ALL_FILMS[number][] = []
+
+  for (const genre of KEY_GENRES) {
+    const candidates = ALL_FILMS.filter(f => !used.has(f.id) && f.genres.includes(genre))
+    if (candidates.length === 0) continue
+    const pick = candidates[Math.floor(Math.random() * candidates.length)]
+    result.push(pick)
+    used.add(pick.id)
+  }
+
+  return result.sort(() => Math.random() - 0.5)
 }
 
-type Vote = 'like' | 'skip'
+type Vote = 'like' | 'dislike' | 'skip'
 type Step = 'landing' | 'rate' | 'loading' | 'results'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -135,6 +194,35 @@ function Eyebrow({ children, color = MUTED }: { children: React.ReactNode; color
   )
 }
 
+// MMR-style diversity re-ranking: penalise recs that share genres with already-selected ones
+function diversifyRecs(recs: Recommendation[], lambda = 0.35): Recommendation[] {
+  if (recs.length <= 1) return recs
+  const selected: Recommendation[] = [recs[0]]
+  const covered = new Set(recs[0].genres.split('|'))
+  const pool = [...recs.slice(1)]
+  while (pool.length > 0 && selected.length < recs.length) {
+    let bestIdx = 0, bestScore = -Infinity
+    pool.forEach((rec, i) => {
+      const genres = rec.genres.split('|')
+      const relevance = 1 / rec.rank
+      const overlap = genres.filter(g => covered.has(g)).length / Math.max(genres.length, 1)
+      const score = relevance - lambda * overlap
+      if (score > bestScore) { bestScore = score; bestIdx = i }
+    })
+    const chosen = pool.splice(bestIdx, 1)[0]
+    selected.push(chosen)
+    chosen.genres.split('|').forEach(g => covered.add(g))
+  }
+  return selected.map((r, i) => ({ ...r, rank: i + 1 }))
+}
+
+// Return genres from a film that positively match the user's taste vector, strongest first
+function getMatchingGenres(filmGenres: string[], vec: Record<string, number>): string[] {
+  return filmGenres
+    .filter(g => (vec[g] ?? 0) > 0)
+    .sort((a, b) => (vec[b] ?? 0) - (vec[a] ?? 0))
+}
+
 function cosineSim(a: Record<string, number>, b: Record<string, number>) {
   let dot = 0
   for (const [k, v] of Object.entries(b)) if (a[k]) dot += a[k] * v
@@ -149,21 +237,26 @@ export default function Home() {
   const [currentIndex, setIndex]  = useState(0)
   const [votes, setVotes]         = useState<Record<number, Vote>>({})
   const [recs, setRecs]           = useState<Recommendation[]>([])
+  const [userVec, setUserVec]     = useState<Record<string, number>>({})
   const [matchedUser, setMatchedUser] = useState<number | null>(null)
   const [error, setError]         = useState('')
-  const [modal, setModal]         = useState<'how' | 'data' | 'match' | null>(null)
+  const [modal, setModal]         = useState<'how' | 'data' | 'match' | 'tasteDNA' | 'filmTwin' | null>(null)
   const [posters, setPosters]     = useState<Record<number, string>>({})
   const [recPosters, setRecPosters]  = useState<Record<number, string>>({})
   const [recDetails, setRecDetails]  = useState<Record<number, { overview: string; cast: string[] }>>({})
   const [feedback, setFeedback]      = useState<'up' | 'down' | null>(null)
   const [selectedRec, setSelectedRec] = useState<number | null>(null)
   const [feedbackStats, setFeedbackStats] = useState<{ up: number; total: number } | null>(null)
+  const [blendScores, setBlendScores]     = useState<Record<number, number>>({})
+  const [neighbors, setNeighbors]         = useState<Array<{ uid: number; sim: number }>>([])
+  // A/B test: randomly assign 'hybrid' (neighbourhood blend, current) vs 'als' (single twin, control)
+  const [variant] = useState<'hybrid' | 'als'>(() => Math.random() < 0.5 ? 'hybrid' : 'als')
   const cardStackRef = useRef<SwipeableCardStackHandle>(null)
 
   async function submitFeedback(rating: 'up' | 'down') {
     setFeedback(rating)
     if (matchedUser !== null) {
-      await supabase.from('feedback').insert({ matched_user_id: matchedUser, rating })
+      await supabase.from('feedback').insert({ matched_user_id: matchedUser, rating, variant })
     }
   }
 
@@ -179,14 +272,25 @@ export default function Home() {
     const token = process.env.NEXT_PUBLIC_TMDB_TOKEN
     if (!token) return
     Promise.all(
-      FILMS.map(f =>
-        fetch(`https://api.themoviedb.org/3/movie/${f.tmdbId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-          .then(r => r.json())
-          .then(d => d.poster_path ? [f.id, `https://image.tmdb.org/t/p/w342${d.poster_path}`] : null)
-          .catch(() => null)
-      )
+      FILMS.map(async f => {
+        const headers = { Authorization: `Bearer ${token}` }
+        try {
+          // Try direct fetch by tmdbId; fall back to title search if title doesn't match
+          const direct = await fetch(`https://api.themoviedb.org/3/movie/${f.tmdbId}`, { headers }).then(r => r.json())
+          if (direct.poster_path && direct.title?.toLowerCase() === f.title.toLowerCase()) {
+            return [f.id, `https://image.tmdb.org/t/p/w342${direct.poster_path}`]
+          }
+          // tmdbId was wrong or title mismatch — search by title+year
+          const res = await fetch(
+            `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(f.title)}&year=${f.year}`,
+            { headers }
+          ).then(r => r.json())
+          const hit = (res.results ?? []).find((m: { title: string; poster_path?: string }) =>
+            m.title.toLowerCase() === f.title.toLowerCase()
+          ) ?? res.results?.[0]
+          return hit?.poster_path ? [f.id, `https://image.tmdb.org/t/p/w342${hit.poster_path}`] : null
+        } catch { return null }
+      })
     ).then(results => {
       const map: Record<number, string> = {}
       for (const r of results) if (r) map[r[0] as number] = r[1] as string
@@ -198,21 +302,30 @@ export default function Home() {
   const likedCount   = likedIndices.length
   const done         = currentIndex >= FILMS.length
 
-  function vote(v: Vote) {
-    setVotes(prev => ({ ...prev, [currentIndex]: v }))
-    setIndex(i => i + 1)
-  }
-
   async function getRecommendations() {
     setError('')
     setStep('loading')
 
+    const dislikedIndices = Object.entries(votes).filter(([, v]) => v === 'dislike').map(([i]) => parseInt(i))
+    const skippedIndices  = Object.entries(votes).filter(([, v]) => v === 'skip').map(([i]) => parseInt(i))
+
     const w: Record<string, number> = {}
     for (const i of likedIndices)
       for (const g of FILMS[i].genres) w[g] = (w[g] ?? 0) + 1
+    for (const i of dislikedIndices)
+      for (const g of FILMS[i].genres) w[g] = (w[g] ?? 0) - 0.5
+
+    // Improvement #2: repeated skips in a genre signal aversion, not just unfamiliarity.
+    // Two or more skips in the same genre applies a small penalty.
+    const skipGenreCounts: Record<string, number> = {}
+    for (const i of skippedIndices)
+      for (const g of FILMS[i].genres) skipGenreCounts[g] = (skipGenreCounts[g] ?? 0) + 1
+    for (const [g, count] of Object.entries(skipGenreCounts))
+      if (count >= 2) w[g] = (w[g] ?? 0) - 0.2 * (count - 1)
+
     const mag = Math.sqrt(Object.values(w).reduce((s, v) => s + v * v, 0))
     const vVec: Record<string, number> = {}
-    for (const [g, s] of Object.entries(w)) vVec[g] = s / mag
+    if (mag > 0) for (const [g, s] of Object.entries(w)) vVec[g] = s / mag
 
     const { data: profiles, error: pe } = await supabase
       .from('user_genre_profiles').select('user_id, genre, score')
@@ -223,19 +336,57 @@ export default function Home() {
       if (!uVecs[r.user_id]) uVecs[r.user_id] = {}
       uVecs[r.user_id][r.genre] = r.score
     }
-    let best = -1, bestS = -1
-    for (const [uid, vec] of Object.entries(uVecs)) {
-      const s = cosineSim(vec, vVec)
-      if (s > bestS) { bestS = s; best = parseInt(uid) }
+
+    // Rank all users by similarity, keep top-5 neighbors
+    const NEIGHBORS = 5
+    const MIN_SIMILARITY = 0.1  // Improvement #3: threshold below which neighbors aren't useful
+    const ranked = Object.entries(uVecs)
+      .map(([uid, vec]) => ({ uid: parseInt(uid), sim: cosineSim(vec, vVec) }))
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, NEIGHBORS)
+      .filter(n => n.sim >= MIN_SIMILARITY)
+
+    // Improvement #3: if no neighbors meet the threshold, ask for more ratings
+    if (ranked.length === 0) {
+      setError('Not enough signal yet — try liking a few more films.')
+      setStep('rate')
+      return
     }
 
+    setNeighbors(ranked)
+    const best = ranked[0].uid  // film twin shown in the UI
+
+    // Improvement #1: IDs of films already shown in onboarding — exclude from recommendations
+    const seenMovieIds = new Set(FILMS.map(f => f.id))
+
+    // Fetch recommendations for all neighbors in one query
+    const neighborIds = ranked.map(n => n.uid)
     const { data: recData, error: re } = await supabase
-      .from('recommendations').select('rank, movie_id, title, genres')
-      .eq('user_id', best).order('rank')
+      .from('recommendations').select('user_id, rank, movie_id, title, genres')
+      .in('user_id', neighborIds)
     if (re || !recData) { setError(re?.message ?? 'Error'); setStep('rate'); return }
 
-    const recList = recData as Recommendation[]
+    // Blend scores: each film gets similarity-weighted rank score from each neighbor.
+    // score(film) = Σ sim(neighbor) × (1 / rank)  — higher rank → higher contribution
+    const simByUser = Object.fromEntries(ranked.map(n => [n.uid, n.sim]))
+    const blended: Record<number, { score: number; title: string; genres: string }> = {}
+    for (const r of recData as (Recommendation & { user_id: number })[]) {
+      if (seenMovieIds.has(r.movie_id)) continue  // Improvement #1: skip already-seen films
+      const contrib = (simByUser[r.user_id] ?? 0) * (1 / r.rank)
+      if (!blended[r.movie_id]) blended[r.movie_id] = { score: 0, title: r.title, genres: r.genres }
+      blended[r.movie_id].score += contrib
+    }
+    const merged: Recommendation[] = Object.entries(blended)
+      .sort(([, a], [, b]) => b.score - a.score)
+      .slice(0, 10)
+      .map(([movie_id, { title, genres }], i) => ({
+        rank: i + 1, movie_id: parseInt(movie_id), title, genres,
+      }))
+
+    setBlendScores(Object.fromEntries(Object.entries(blended).map(([id, { score }]) => [parseInt(id), score])))
+    const recList = diversifyRecs(merged)
     setRecs(recList)
+    setUserVec(vVec)
     setMatchedUser(best)
     setStep('results')
 
@@ -322,7 +473,8 @@ export default function Home() {
   }
 
   function restart() {
-    setStep('rate'); setIndex(0); setVotes({}); setRecs([]); setMatchedUser(null); setError('')
+    setStep('rate'); setIndex(0); setVotes({}); setRecs([]); setUserVec({}); setMatchedUser(null); setError('')
+    setBlendScores({}); setNeighbors([])
   }
 
   // ── MODALS ────────────────────────────────────────────────────────────────
@@ -380,10 +532,11 @@ export default function Home() {
     },
   }
 
-  const activeModal = modal ? modalContent[modal] : null
+  const specialModals = new Set(['tasteDNA', 'filmTwin'])
+  const activeModal = (modal && !specialModals.has(modal)) ? modalContent[modal] : null
 
   // ── SHARED MODAL ──────────────────────────────────────────────────────────
-  const ModalOverlay = activeModal ? (
+  const ModalOverlay = (activeModal || (modal && specialModals.has(modal))) ? (
     <div
       onClick={() => setModal(null)}
       style={{
@@ -404,18 +557,114 @@ export default function Home() {
         <div style={{ height: 3, background: ACCENT }} />
         <div style={{ padding: '22px 24px 18px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <Eyebrow color={ACCENT}>{modal === 'match' ? 'How matching works' : modal === 'how' ? 'The process' : 'About the data'}</Eyebrow>
+            <Eyebrow color={ACCENT}>{modal === 'match' ? 'How matching works' : modal === 'how' ? 'The process' : modal === 'tasteDNA' ? 'Your taste profile' : modal === 'filmTwin' ? 'Your film twin' : 'About the data'}</Eyebrow>
             <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 24, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginTop: 4 }}>
-              {activeModal.title}
+              {activeModal?.title ?? (modal === 'tasteDNA' ? 'Taste DNA' : 'Film Twin')}
             </div>
           </div>
           <button onClick={() => setModal(null)} style={{ background: CREAM, border: `1px solid ${BORDER}`, cursor: 'pointer', color: MUTED, width: 32, height: 32, borderRadius: 8, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
         </div>
         <div style={{ padding: '0 24px 24px' }}>
-          {(modal === 'how' || modal === 'match') ? (
+          {modal === 'tasteDNA' ? (() => {
+            const sorted = Object.entries(userVec)
+              .filter(([, v]) => v > 0)
+              .sort(([, a], [, b]) => b - a)
+            const maxVal = sorted[0]?.[1] ?? 1
+            return (
+              <div style={{ paddingTop: 20 }}>
+                <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginBottom: 20, lineHeight: 1.6 }}>
+                  Built from your likes during the rating session. Each bar shows how strongly a genre shapes your taste.
+                </p>
+                {sorted.map(([genre, val]) => {
+                  const pct = Math.round((val / maxVal) * 100)
+                  return (
+                    <div key={genre} style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 13, color: DARK }}>{genre}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: MUTED }}>{pct}%</span>
+                      </div>
+                      <div style={{ height: 8, background: BORDER, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: pct >= 70 ? ACCENT : pct >= 40 ? '#E06020' : FAINT, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                      </div>
+                    </div>
+                  )
+                })}
+                {sorted.length === 0 && (
+                  <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>No likes recorded yet.</p>
+                )}
+                {(() => {
+                  const decadeCounts: Record<string, number> = {}
+                  for (const i of likedIndices) {
+                    const decade = `${Math.floor(FILMS[i].year / 10) * 10}s`
+                    decadeCounts[decade] = (decadeCounts[decade] ?? 0) + 1
+                  }
+                  const decadeSorted = Object.entries(decadeCounts).sort(([, a], [, b]) => b - a)
+                  if (decadeSorted.length === 0) return null
+                  const topDecade = decadeSorted[0][0]
+                  return (
+                    <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${BORDER}` }}>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 12 }}>Decade breakdown</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {decadeSorted.map(([decade, count]) => (
+                          <div key={decade} style={{ background: decade === topDecade ? 'rgba(194,65,12,0.08)' : CREAM, border: `1px solid ${decade === topDecade ? 'rgba(194,65,12,0.25)' : BORDER}`, borderRadius: 8, padding: '8px 14px', textAlign: 'center' }}>
+                            <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 20, color: decade === topDecade ? ACCENT : DARK, lineHeight: 1 }}>{decade}</div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, marginTop: 3 }}>{count} film{count > 1 ? 's' : ''}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT, marginTop: 12, lineHeight: 1.6 }}>
+                        You lean <strong style={{ color: MUTED }}>{topDecade}</strong> — your most-liked decade during this session.
+                      </p>
+                    </div>
+                  )
+                })()}
+              </div>
+            )
+          })() : modal === 'filmTwin' ? (() => {
+            const twin = neighbors[0]
+            if (!twin) return <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, paddingTop: 20 }}>No match data available.</p>
+            const simPct = Math.round(twin.sim * 100)
+            const sharedGenres = Object.entries(userVec)
+              .filter(([, v]) => v > 0.05)
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, 5)
+              .map(([g]) => g)
+            return (
+              <div style={{ paddingTop: 20 }}>
+                <div style={{ background: CREAM, borderRadius: 12, padding: '20px', marginBottom: 20, border: `1px solid ${BORDER}` }}>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Nearest viewer</div>
+                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 44, color: ACCENT, lineHeight: 1 }}>#{twin.uid}</div>
+                  <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginTop: 4 }}>out of 610 real MovieLens viewers</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+                  <div style={{ background: CREAM, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Similarity</div>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 32, color: simPct >= 70 ? '#16A34A' : simPct >= 40 ? ACCENT : MUTED, lineHeight: 1 }}>{simPct}%</div>
+                  </div>
+                  <div style={{ background: CREAM, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Neighbours used</div>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 32, color: DARK, lineHeight: 1 }}>{neighbors.length}</div>
+                  </div>
+                </div>
+                {sharedGenres.length > 0 && (
+                  <>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>Your top genres</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {sharedGenres.map(g => (
+                        <span key={g} style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: DARK, background: CREAM, border: `1px solid ${BORDER}`, borderRadius: 6, padding: '4px 12px' }}>{g}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT, marginTop: 16, lineHeight: 1.6 }}>
+                  Recommendations are blended from top-{neighbors.length} neighbours, weighted by their similarity to you.
+                </p>
+              </div>
+            )
+          })() : (modal === 'how' || modal === 'match') ? (
             <div>
-              {activeModal.rows.map((row, i) => (
-                <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', padding: '20px 0', borderBottom: i < activeModal.rows.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+              {activeModal?.rows.map((row, i) => (
+                <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start', padding: '20px 0', borderBottom: i < (activeModal?.rows.length ?? 0) - 1 ? `1px solid ${BORDER}` : 'none' }}>
                   <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 52, lineHeight: 0.85, color: ACCENT, flexShrink: 0, width: 44 }}>
                     {i + 1}
                   </div>
@@ -711,12 +960,12 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 3 }}>
             {FILMS.map((_, i) => {
               const v = votes[i]
-              const bg = v === 'like' ? ACCENT : v === 'skip' ? FAINT : BORDER
+              const bg = v === 'like' ? ACCENT : v === 'dislike' ? NEGATIVE : v === 'skip' ? FAINT : BORDER
               return <div key={i} style={{ flex: 1, height: 5, borderRadius: 3, background: bg, transition: 'background 0.2s' }} />
             })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Eyebrow color={MUTED}>{likedCount} liked · {Object.values(votes).filter(v => v === 'skip').length} skipped</Eyebrow>
+            <Eyebrow color={MUTED}>{likedCount} liked · {Object.values(votes).filter(v => v === 'dislike').length} disliked · {Object.values(votes).filter(v => v === 'skip').length} skipped</Eyebrow>
             <Eyebrow color={MUTED}>{Math.min(currentIndex, 12)} / 12</Eyebrow>
           </div>
         </div>
@@ -727,7 +976,7 @@ export default function Home() {
       {/* Card area */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 80, padding: '32px 56px' }}>
 
-        {/* SKIP side */}
+        {/* DISLIKE side */}
         <button onClick={() => cardStackRef.current?.swipeLeft()} style={{ width: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer' }}>
           <div style={{
             width: 64, height: 64, borderRadius: '50%', border: `3px solid ${NEGATIVE}`,
@@ -741,7 +990,7 @@ export default function Home() {
           <span style={{
             fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
             fontSize: 22, letterSpacing: '0.08em', textTransform: 'uppercase', color: NEGATIVE,
-          }}>Skip</span>
+          }}>Dislike</span>
         </button>
 
         {/* Card stack */}
@@ -752,7 +1001,8 @@ export default function Home() {
               images={FILMS.map(f => posters[f.id] ?? '')}
               borderRadius={24}
               onSwipeRight={i => { setVotes(prev => ({ ...prev, [i]: 'like' })); setIndex(i + 1) }}
-              onSwipeLeft={i => { setVotes(prev => ({ ...prev, [i]: 'skip' })); setIndex(i + 1) }}
+              onSwipeLeft={i => { setVotes(prev => ({ ...prev, [i]: 'dislike' })); setIndex(i + 1) }}
+              onSkip={i => { setVotes(prev => ({ ...prev, [i]: 'skip' })); setIndex(i + 1) }}
               renderOverlay={(i, isTop) => isTop ? (
                 <>
                   {/* Counter badge */}
@@ -791,13 +1041,18 @@ export default function Home() {
           ) : null}
           {/* Hint — shown while rating */}
           {!done && (
-            <p style={{
-              position: 'absolute', bottom: -36, left: 0, right: 0, textAlign: 'center',
-              fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12,
-              color: MUTED, letterSpacing: '0.01em',
-            }}>
-              Haven't seen it? Just skip →
-            </p>
+            <button
+              onClick={() => cardStackRef.current?.skip()}
+              style={{
+                position: 'absolute', bottom: -40, left: 0, right: 0,
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13,
+                color: MUTED, letterSpacing: '0.01em', textAlign: 'center',
+                padding: '6px 0',
+              }}
+            >
+              Haven't seen it? Skip →
+            </button>
           )}
           {!done ? null : (
             <div style={{
@@ -812,8 +1067,11 @@ export default function Home() {
                   <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 72, lineHeight: 0.85, color: '#fff', letterSpacing: '-0.02em' }}>{FILMS.length}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>You liked</div>
-                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 72, lineHeight: 0.85, color: ACCENT, letterSpacing: '-0.02em' }}>{likedCount}</div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Liked · Disliked</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, justifyContent: 'flex-end' }}>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 72, lineHeight: 0.85, color: ACCENT, letterSpacing: '-0.02em' }}>{likedCount}</div>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 72, lineHeight: 0.85, color: NEGATIVE, letterSpacing: '-0.02em' }}>{Object.values(votes).filter(v => v === 'dislike').length}</div>
+                  </div>
                 </div>
               </div>
 
@@ -912,6 +1170,15 @@ export default function Home() {
   const rest   = recs.slice(1)
   const liked  = likedIndices.map(i => FILMS[i])
 
+  // Confidence tiers: sort recs by their raw blend score; top 3 = High, next 4 = Medium, rest = Exploration
+  const recsSortedByScore = [...recs].sort((a, b) => (blendScores[b.movie_id] ?? 0) - (blendScores[a.movie_id] ?? 0))
+  const confidenceTier = (movieId: number): { label: string; color: string; bg: string } => {
+    const idx = recsSortedByScore.findIndex(r => r.movie_id === movieId)
+    if (idx < 3)  return { label: 'High',        color: '#16A34A', bg: 'rgba(22,163,74,0.12)' }
+    if (idx < 7)  return { label: 'Medium',       color: ACCENT,   bg: 'rgba(194,65,12,0.1)' }
+    return         { label: 'Exploration',        color: MUTED,    bg: 'rgba(138,130,120,0.1)' }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#0E0C0A', display: 'flex', flexDirection: 'column' }}>
       {ModalOverlay}
@@ -943,13 +1210,37 @@ export default function Home() {
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#4A443E', marginLeft: 2 }}>?</span>
         </button>
 
-        <button onClick={restart} style={{
-          background: 'none', border: `1px solid #2A2520`, cursor: 'pointer',
-          fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: '#6B6560',
-          padding: '0 14px', height: 30, borderRadius: 6,
-        }}>
-          ← Rate again
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={() => setModal('tasteDNA')} title="Taste DNA" style={{
+            background: 'rgba(255,255,255,0.07)', border: `1px solid rgba(255,255,255,0.14)`, cursor: 'pointer',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em',
+            padding: '0 11px', height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            ◈ DNA
+          </button>
+          <button onClick={() => setModal('filmTwin')} title="Film Twin" style={{
+            background: 'rgba(255,255,255,0.07)', border: `1px solid rgba(255,255,255,0.14)`, cursor: 'pointer',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em',
+            padding: '0 11px', height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            ◉ Twin
+          </button>
+          <Link href="/model" style={{
+            background: 'rgba(194,65,12,0.18)', border: `1px solid rgba(194,65,12,0.35)`, cursor: 'pointer',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.06em',
+            padding: '0 11px', height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5,
+            textDecoration: 'none',
+          }}>
+            Model ↗
+          </Link>
+          <button onClick={restart} style={{
+            background: 'rgba(255,255,255,0.05)', border: `1px solid rgba(255,255,255,0.1)`, cursor: 'pointer',
+            fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: 'rgba(255,255,255,0.55)',
+            padding: '0 14px', height: 28, borderRadius: 6,
+          }}>
+            ← Rate again
+          </button>
+        </div>
       </header>
 
       {/* Main: big poster left + 3×3 grid right */}
@@ -961,6 +1252,7 @@ export default function Home() {
           const poster = recPosters[top.movie_id]
           const details = recDetails[top.movie_id]
           const isFlipped = selectedRec === top.movie_id
+          const matchGenres = getMatchingGenres(genres, userVec)
           return (
             <div
               onMouseEnter={() => setSelectedRec(top.movie_id)}
@@ -983,7 +1275,10 @@ export default function Home() {
                   ...(poster ? {} : posterStyle(genres)),
                 }}>
                   {poster && <img src={poster} alt={top.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                  <div style={{ position: 'absolute', top: 14, left: 14, background: ACCENT, borderRadius: 6, padding: '3px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff', fontWeight: 500 }}>01</div>
+                  <div style={{ position: 'absolute', top: 14, left: 14, display: 'flex', gap: 6 }}>
+                    <div style={{ background: ACCENT, borderRadius: 6, padding: '3px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff', fontWeight: 500 }}>01</div>
+                    {blendScores[top.movie_id] != null && (() => { const c = confidenceTier(top.movie_id); return <div style={{ background: c.bg, border: `1px solid ${c.color}30`, borderRadius: 6, padding: '3px 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: c.color, fontWeight: 600, letterSpacing: '0.08em', backdropFilter: 'blur(4px)' }}>{c.label}</div> })()}
+                  </div>
                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '80px 20px 22px', background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)' }}>
                     <Eyebrow color={ACCENT}>Top pick</Eyebrow>
                     <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(20px, 2.4vw, 34px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em', marginTop: 6, marginBottom: 8 }}>{top.title}</div>
@@ -1013,6 +1308,20 @@ export default function Home() {
                     ? <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.72)', lineHeight: 1.7, flex: 1, overflowY: 'auto' }}>{details.overview}</p>
                     : <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>No description available.</p>
                   }
+                  {matchGenres.length > 0 && (
+                    <div style={{ flexShrink: 0 }}>
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 12 }} />
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 8 }}>Why this film</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                        {matchGenres.map(g => (
+                          <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#4ADE80', letterSpacing: '0.1em', textTransform: 'uppercase', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.2)', padding: '3px 8px', borderRadius: 4 }}>✓ {g}</span>
+                        ))}
+                      </div>
+                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: 'rgba(255,255,255,0.38)', lineHeight: 1.5 }}>
+                        Matches your taste · your film twin rated it highly
+                      </p>
+                    </div>
+                  )}
                   {details?.cast && details.cast.length > 0 && (
                     <div style={{ flexShrink: 0 }}>
                       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 12 }} />
@@ -1043,6 +1352,7 @@ export default function Home() {
             const poster  = recPosters[rec.movie_id]
             const details = recDetails[rec.movie_id]
             const isFlipped = selectedRec === rec.movie_id
+            const matchGenres = getMatchingGenres(genres, userVec)
             return (
               <div
                 key={rec.rank}
@@ -1066,7 +1376,10 @@ export default function Home() {
                     ...(poster ? {} : posterStyle(genres)),
                   }}>
                     {poster && <img src={poster} alt={rec.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
-                    <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', borderRadius: 5, padding: '2px 7px', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#fff' }}>{String(rec.rank).padStart(2, '0')}</div>
+                    <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, display: 'flex', gap: 4 }}>
+                      <div style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', borderRadius: 5, padding: '2px 7px', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#fff' }}>{String(rec.rank).padStart(2, '0')}</div>
+                      {blendScores[rec.movie_id] != null && (() => { const c = confidenceTier(rec.movie_id); return <div style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', borderRadius: 5, padding: '2px 6px', fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: c.color, letterSpacing: '0.06em' }}>{c.label}</div> })()}
+                    </div>
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1, padding: '28px 10px 10px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)' }}>
                       <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(11px, 1.1vw, 16px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: 3 }}>{rec.title}</div>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{genres[0]}</span>
@@ -1091,6 +1404,13 @@ export default function Home() {
                       ? <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: 'rgba(255,255,255,0.68)', lineHeight: 1.55 }}>{details.overview}</p>
                       : <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: MUTED }}>No description.</p>
                     }
+                    {matchGenres.length > 0 && (
+                      <div style={{ flexShrink: 0, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {matchGenres.slice(0, 2).map(g => (
+                          <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: '#4ADE80', letterSpacing: '0.08em', textTransform: 'uppercase', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.15)', padding: '2px 5px', borderRadius: 3 }}>✓ {g}</span>
+                        ))}
+                      </div>
+                    )}
                     {details?.cast && details.cast.length > 0 && (
                       <p style={{ flexShrink: 0, fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.38)', lineHeight: 1.4 }}>{details.cast.join(' · ')}</p>
                     )}
@@ -1101,6 +1421,34 @@ export default function Home() {
           })}
         </div>
       </div>
+
+      {/* What you're missing */}
+      {(() => {
+        // Genres the user had no positive signal for, but appear in the recommended films
+        const likedGenres = new Set(Object.keys(userVec).filter(g => (userVec[g] ?? 0) > 0.05))
+        const unexploredGenres: Record<string, number> = {}
+        for (const rec of recs) {
+          for (const g of rec.genres.split('|')) {
+            if (!likedGenres.has(g)) unexploredGenres[g] = (unexploredGenres[g] ?? 0) + 1
+          }
+        }
+        const candidates = Object.entries(unexploredGenres).sort(([, a], [, b]) => b - a).slice(0, 4)
+        if (candidates.length === 0) return null
+        return (
+          <div style={{ borderTop: '1px solid #1A1612', padding: '16px 20px', background: '#0E0C0A', display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.14em', textTransform: 'uppercase', flexShrink: 0 }}>What you're missing</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {candidates.map(([genre, count]) => (
+                <span key={genre} style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {genre}
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.5)' }}>{count}×</span>
+                </span>
+              ))}
+            </div>
+            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>Genres in your recs you didn't rate — your twin loved them.</span>
+          </div>
+        )
+      })()}
 
       {/* Feedback section */}
       <div style={{
@@ -1194,7 +1542,12 @@ export default function Home() {
         height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 20px', borderTop: `1px solid #1A1612`, background: '#0E0C0A',
       }}>
-        <Eyebrow color={'#2E2924'}>Spark ALS · rank=20 · regParam=0.1 · matched viewer #{matchedUser}</Eyebrow>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Eyebrow color={'#2E2924'}>Spark ALS · rank=20 · regParam=0.1 · matched viewer #{matchedUser}</Eyebrow>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: 3, background: variant === 'hybrid' ? 'rgba(194,65,12,0.15)' : 'rgba(138,130,120,0.15)', color: variant === 'hybrid' ? ACCENT : '#4A443E', border: `1px solid ${variant === 'hybrid' ? 'rgba(194,65,12,0.25)' : 'rgba(138,130,120,0.2)'}` }}>
+            {variant === 'hybrid' ? 'A/B: blend' : 'A/B: als'}
+          </span>
+        </div>
         <a href="https://grouplens.org/datasets/movielens/" target="_blank" rel="noreferrer"
            style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#2E2924', textDecoration: 'none' }}>
           grouplens.org ↗

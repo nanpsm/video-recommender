@@ -15,12 +15,14 @@ interface SwipeableCardStackProps {
   leftIcon?: React.ReactNode | null
   onSwipeRight?: (originalIndex: number) => void
   onSwipeLeft?: (originalIndex: number) => void
+  onSkip?: (originalIndex: number) => void
   renderOverlay?: (originalIndex: number, isTop: boolean) => React.ReactNode
 }
 
 export interface SwipeableCardStackHandle {
   swipeLeft: () => void
   swipeRight: () => void
+  skip: () => void
 }
 
 interface CardItem {
@@ -41,6 +43,7 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
   leftIcon = null,
   onSwipeRight,
   onSwipeLeft,
+  onSkip,
   renderOverlay,
 }: SwipeableCardStackProps, ref) {
   // Store cards with original indices; reverse so first image is on top
@@ -76,12 +79,13 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
     setDragDirections(prev => ({ ...prev, [index]: direction }))
     setTimeout(() => {
       if (direction === 'right') onSwipeRight?.(card.originalIndex)
+      else if (direction === 'skip') onSkip?.(card.originalIndex)
       else onSwipeLeft?.(card.originalIndex)
       setCards(prev => prev.filter((_, i) => i !== index))
     }, 300)
   }
 
-  // Expose swipeLeft/swipeRight so parent buttons can trigger card removal
+  // Expose swipeLeft/swipeRight/skip so parent buttons can trigger card removal
   React.useImperativeHandle(ref, () => ({
     swipeLeft: () => {
       const topIndex = cards.length - 1
@@ -90,6 +94,10 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
     swipeRight: () => {
       const topIndex = cards.length - 1
       if (topIndex >= 0) handleSwipe(topIndex, 'right')
+    },
+    skip: () => {
+      const topIndex = cards.length - 1
+      if (topIndex >= 0) handleSwipe(topIndex, 'skip')
     },
   }), [cards])
 
@@ -129,12 +137,15 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
               }}
               exit="exit"
               variants={{
-                exit: (custom: { direction?: string }) => ({
-                  x: (custom?.direction ?? 'left') === 'right' ? 400 : -400,
-                  rotate: (custom?.direction ?? 'left') === 'right' ? 20 : -20,
-                  opacity: 0,
-                  transition: { duration: 0.35, ease: 'easeIn' },
-                }),
+                exit: (custom: { direction?: string }) => {
+                  if (custom?.direction === 'skip') return { y: -80, opacity: 0, scale: 0.88, transition: { duration: 0.28, ease: 'easeIn' } }
+                  return {
+                    x: (custom?.direction ?? 'left') === 'right' ? 400 : -400,
+                    rotate: (custom?.direction ?? 'left') === 'right' ? 20 : -20,
+                    opacity: 0,
+                    transition: { duration: 0.35, ease: 'easeIn' },
+                  }
+                },
               }}
               style={{
                 position: 'absolute',
@@ -181,7 +192,7 @@ export const SwipeableCardStack = React.forwardRef<SwipeableCardStackHandle, Swi
                   border: '4px solid #ef4444', borderRadius: 8, padding: '4px 14px',
                   transform: 'rotate(15deg)',
                 }}>
-                  <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 30, color: '#ef4444', letterSpacing: '0.05em' }}>SKIP</span>
+                  <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 30, color: '#ef4444', letterSpacing: '0.05em' }}>DISLIKE</span>
                 </div>
               )}
 

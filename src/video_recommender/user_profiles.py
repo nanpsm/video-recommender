@@ -13,6 +13,7 @@ from pyspark.sql import functions as F
 from supabase import create_client
 
 from video_recommender.explore import get_spark, load_data
+from video_recommender.train_als import MIN_MOVIE_RATINGS, SEED
 
 SUPABASE_URL = "https://spmtgrmedfilavekoije.supabase.co"
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -30,10 +31,20 @@ def main():
     spark = get_spark("user_profiles")
 
     ratings, movies = load_data(spark)
+    ratings = ratings.drop("timestamp")
+
+    # Use the same 80/20 split as training so genre vectors match the
+    # collaborative-filtering model's view of each user's history
+    train, _ = ratings.randomSplit([0.8, 0.2], seed=SEED)
+
+    # Apply the same cold-movie filter used during training
+    movie_counts = train.groupBy("movieId").agg(F.count("*").alias("count"))
+    warm = movie_counts.filter(F.col("count") >= MIN_MOVIE_RATINGS).select("movieId")
+    train = train.join(warm, "movieId")
 
     # Keep only liked ratings, join with movie genres
     liked = (
-        ratings
+        train
         .filter(F.col("rating") >= LIKED_THRESHOLD)
         .join(movies.select("movieId", "genres"), "movieId")
     )
