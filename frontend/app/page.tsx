@@ -163,7 +163,6 @@ export default function Home() {
   const [posters, setPosters]     = useState<Record<number, string>>({})
   const [recPosters, setRecPosters]  = useState<Record<number, string>>({})
   const [recDetails, setRecDetails]  = useState<Record<number, { overview: string; cast: string[] }>>({})
-  const [hoveredRec, setHoveredRec]  = useState<number | null>(null)
   const [feedback, setFeedback]      = useState<'up' | 'down' | null>(null)
   const [selectedRec, setSelectedRec] = useState<number | null>(null)
   const [feedbackStats, setFeedbackStats] = useState<{ up: number; total: number } | null>(null)
@@ -979,7 +978,7 @@ export default function Home() {
         border: `3px solid ${BORDER}`, borderTopColor: ACCENT,
         animation: 'spin 0.8s linear infinite',
       }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } } .no-scrollbar::-webkit-scrollbar { display: none }`}</style>
       <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 16, color: MUTED }}>
         Finding your match…
       </p>
@@ -998,85 +997,6 @@ export default function Home() {
     <div style={{ minHeight: '100vh', background: '#0E0C0A', display: 'flex', flexDirection: 'column' }}>
       {ModalOverlay}
 
-      {/* Movie detail modal */}
-      {selectedRec !== null && (() => {
-        const allRecs = [top, ...rest].filter(Boolean)
-        const rec = allRecs.find(r => r!.movie_id === selectedRec)
-        const details = rec ? recDetails[rec.movie_id] : null
-        const poster = rec ? recPosters[rec.movie_id] : null
-        if (!rec) return null
-        const genres = rec.genres.split('|')
-        return (
-          <div
-            onClick={() => setSelectedRec(null)}
-            style={{
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 300,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-            }}
-          >
-            <div
-              onClick={e => e.stopPropagation()}
-              style={{
-                background: '#1A1612', borderRadius: 20, overflow: 'hidden',
-                width: '100%', maxWidth: 660, display: 'flex', alignItems: 'flex-start',
-                boxShadow: '0 40px 100px rgba(0,0,0,0.8)',
-                maxHeight: '90vh',
-              }}
-            >
-              {/* Poster side */}
-              <div style={{ width: 220, flexShrink: 0, position: 'relative', background: '#111', alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {poster
-                  ? <img src={poster} alt={rec.title} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-                  : <div style={{ position: 'absolute', inset: 0, ...posterStyle(genres) }} />
-                }
-                <div style={{
-                  position: 'absolute', top: 12, left: 12,
-                  background: ACCENT, borderRadius: 6, padding: '3px 10px',
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff',
-                }}>{String(rec.rank).padStart(2, '0')}</div>
-              </div>
-
-              {/* Info side */}
-              <div style={{ flex: 1, padding: '28px 28px 28px', display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                      {genres.map(g => (
-                        <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: ACCENT, letterSpacing: '0.12em', textTransform: 'uppercase', background: 'rgba(194,65,12,0.12)', padding: '3px 8px', borderRadius: 4 }}>{g}</span>
-                      ))}
-                    </div>
-                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 28, color: '#fff', textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.01em' }}>{rec.title}</div>
-                  </div>
-                  <button onClick={() => setSelectedRec(null)} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', cursor: 'pointer', color: MUTED, width: 32, height: 32, borderRadius: 8, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: 12 }}>×</button>
-                </div>
-
-                <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
-
-                {details?.overview ? (
-                  <div>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>Overview</div>
-                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: 'rgba(255,255,255,0.75)', lineHeight: 1.7 }}>{details.overview}</p>
-                  </div>
-                ) : (
-                  <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED }}>No description available.</p>
-                )}
-
-                {details?.cast && details.cast.length > 0 && (
-                  <div>
-                    <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 16 }} />
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 12 }}>Cast</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {details.cast.map(name => (
-                        <span key={name} style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: '#fff', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '5px 12px' }}>{name}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })()}
 
       {/* Header */}
       <header style={{
@@ -1116,68 +1036,78 @@ export default function Home() {
       {/* Main: big poster left + 3×3 grid right */}
       <div style={{ flex: 1, display: 'flex', gap: 12, padding: 12, minHeight: '80vh' }}>
 
-        {/* LEFT — #1 poster */}
+        {/* LEFT — #1 flip card */}
         {top && (() => {
           const genres = top.genres.split('|')
           const poster = recPosters[top.movie_id]
+          const details = recDetails[top.movie_id]
+          const isFlipped = selectedRec === top.movie_id
           return (
             <div
-              onMouseEnter={() => setHoveredRec(top.movie_id)}
-              onMouseLeave={() => setHoveredRec(null)}
-              onClick={() => setSelectedRec(top.movie_id)}
-              style={{
-                width: '32%', flexShrink: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
-                background: poster ? '#111' : undefined,
-                boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
-                cursor: 'pointer',
-                ...(poster ? {} : posterStyle(genres)),
-              }}>
-              {poster && <img src={poster} alt={top.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease', transform: hoveredRec === top.movie_id ? 'scale(1.04)' : 'scale(1)' }} />}
-              {/* Rank badge */}
+              onMouseEnter={() => setSelectedRec(top.movie_id)}
+              onMouseLeave={() => setSelectedRec(null)}
+              style={{ width: '32%', flexShrink: 0, perspective: '1000px', cursor: 'default', borderRadius: 12 }}
+            >
               <div style={{
-                position: 'absolute', top: 14, left: 14,
-                background: ACCENT, borderRadius: 6, padding: '3px 10px',
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff', fontWeight: 500,
-              }}>01</div>
-              {/* Hover detail overlay */}
-              {hoveredRec === top.movie_id && recDetails[top.movie_id] && (
+                position: 'relative', width: '100%', height: '100%',
+                transformStyle: 'preserve-3d',
+                transition: 'transform 0.55s cubic-bezier(0.4,0.2,0.2,1)',
+                transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                borderRadius: 12,
+                boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+              }}>
+                {/* FRONT */}
                 <div style={{
-                  position: 'absolute', inset: 0,
-                  background: 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.75) 100%)',
-                  display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-                  padding: '24px 20px', gap: 12,
+                  position: 'absolute', inset: 0, borderRadius: 12, overflow: 'hidden',
+                  backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+                  background: poster ? '#111' : undefined,
+                  ...(poster ? {} : posterStyle(genres)),
                 }}>
-                  <Eyebrow color={ACCENT}>Top pick</Eyebrow>
-                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(18px, 2vw, 28px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em' }}>{top.title}</div>
-                  <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {recDetails[top.movie_id].overview}
-                  </p>
-                  {recDetails[top.movie_id].cast.length > 0 && (
-                    <div>
-                      <Eyebrow color={'rgba(255,255,255,0.3)'}>Cast</Eyebrow>
-                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
-                        {recDetails[top.movie_id].cast.join(' · ')}
-                      </p>
+                  {poster && <img src={poster} alt={top.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                  <div style={{ position: 'absolute', top: 14, left: 14, background: ACCENT, borderRadius: 6, padding: '3px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff', fontWeight: 500 }}>01</div>
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '80px 20px 22px', background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)' }}>
+                    <Eyebrow color={ACCENT}>Top pick</Eyebrow>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(20px, 2.4vw, 34px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em', marginTop: 6, marginBottom: 8 }}>{top.title}</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {genres.slice(0, 3).map(g => (
+                        <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{g}</span>
+                      ))}
                     </div>
-                  )}
-                </div>
-              )}
-              {/* Default bottom overlay (no hover) */}
-              {hoveredRec !== top.movie_id && (
-                <div style={{
-                  position: 'absolute', bottom: 0, left: 0, right: 0,
-                  padding: '80px 20px 22px',
-                  background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)',
-                }}>
-                  <Eyebrow color={ACCENT}>Top pick</Eyebrow>
-                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(20px, 2.4vw, 34px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em', marginTop: 6, marginBottom: 8 }}>{top.title}</div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {genres.slice(0, 3).map(g => (
-                      <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{g}</span>
-                    ))}
                   </div>
                 </div>
-              )}
+                {/* BACK */}
+                <div style={{
+                  position: 'absolute', inset: 0, borderRadius: 12, overflow: 'hidden',
+                  backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+                  transform: 'rotateY(180deg)',
+                  background: '#1A1612',
+                  display: 'flex', flexDirection: 'column', padding: '24px 22px', gap: 14, overflowY: 'auto',
+                }} className="no-scrollbar">
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {genres.map(g => (
+                      <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: ACCENT, letterSpacing: '0.12em', textTransform: 'uppercase', background: 'rgba(194,65,12,0.12)', padding: '3px 8px', borderRadius: 4 }}>{g}</span>
+                    ))}
+                  </div>
+                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(20px, 2vw, 30px)', color: '#fff', textTransform: 'uppercase', lineHeight: 1, letterSpacing: '-0.01em' }}>{top.title}</div>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+                  {details?.overview
+                    ? <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.72)', lineHeight: 1.7, flex: 1, overflowY: 'auto' }}>{details.overview}</p>
+                    : <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>No description available.</p>
+                  }
+                  {details?.cast && details.cast.length > 0 && (
+                    <div style={{ flexShrink: 0 }}>
+                      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 12 }} />
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>Cast</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {details.cast.map(name => (
+                          <span key={name} style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '4px 10px' }}>{name}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', textAlign: 'center', flexShrink: 0 }}>click to flip back</div>
+                </div>
+              </div>
             </div>
           )
         })()}
@@ -1190,61 +1120,63 @@ export default function Home() {
           gap: 10, minWidth: 0,
         }}>
           {rest.slice(0, 9).map((rec) => {
-            const genres   = rec.genres.split('|')
-            const poster   = recPosters[rec.movie_id]
-            const details  = recDetails[rec.movie_id]
-            const isHover  = hoveredRec === rec.movie_id
+            const genres  = rec.genres.split('|')
+            const poster  = recPosters[rec.movie_id]
+            const details = recDetails[rec.movie_id]
+            const isFlipped = selectedRec === rec.movie_id
             return (
               <div
                 key={rec.rank}
-                onMouseEnter={() => setHoveredRec(rec.movie_id)}
-                onMouseLeave={() => setHoveredRec(null)}
-                onClick={() => setSelectedRec(rec.movie_id)}
-                style={{
-                  position: 'relative', borderRadius: 10, overflow: 'hidden',
-                  background: poster ? '#111' : undefined,
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-                  cursor: 'pointer',
-                  ...(poster ? {} : posterStyle(genres)),
-                }}>
-                {poster && <img src={poster} alt={rec.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.35s ease', transform: isHover ? 'scale(1.05)' : 'scale(1)' }} />}
-                {/* Rank badge */}
+                onMouseEnter={() => setSelectedRec(rec.movie_id)}
+                onMouseLeave={() => setSelectedRec(null)}
+                style={{ position: 'relative', perspective: '1000px', cursor: 'default', borderRadius: 10 }}
+              >
                 <div style={{
-                  position: 'absolute', top: 8, left: 8, zIndex: 2,
-                  background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
-                  borderRadius: 5, padding: '2px 7px',
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#fff',
-                }}>{String(rec.rank).padStart(2, '0')}</div>
-
-                {/* Hover overlay — description + cast */}
-                {isHover && details ? (
+                  position: 'relative', width: '100%', height: '100%',
+                  transformStyle: 'preserve-3d',
+                  transition: 'transform 0.55s cubic-bezier(0.4,0.2,0.2,1)',
+                  transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                  borderRadius: 10,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                }}>
+                  {/* FRONT */}
                   <div style={{
-                    position: 'absolute', inset: 0, zIndex: 1,
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.8) 100%)',
-                    display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-                    padding: '10px 12px 12px', gap: 6,
+                    position: 'absolute', inset: 0, borderRadius: 10, overflow: 'hidden',
+                    backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+                    background: poster ? '#111' : undefined,
+                    ...(poster ? {} : posterStyle(genres)),
                   }}>
-                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(10px, 1vw, 14px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em' }}>{rec.title}</div>
-                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {details.overview}
-                    </p>
-                    {details.cast.length > 0 && (
-                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-                        {details.cast.join(' · ')}
-                      </p>
+                    {poster && <img src={poster} alt={rec.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+                    <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', borderRadius: 5, padding: '2px 7px', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#fff' }}>{String(rec.rank).padStart(2, '0')}</div>
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1, padding: '28px 10px 10px', background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)' }}>
+                      <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(11px, 1.1vw, 16px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: 3 }}>{rec.title}</div>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{genres[0]}</span>
+                    </div>
+                  </div>
+                  {/* BACK */}
+                  <div style={{
+                    position: 'absolute', inset: 0, borderRadius: 10, overflow: 'hidden',
+                    backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+                    transform: 'rotateY(180deg)',
+                    background: '#1A1612',
+                    display: 'flex', flexDirection: 'column', padding: '12px 12px 10px', gap: 8, overflowY: 'auto',
+                  }} className="no-scrollbar">
+                    <div style={{ flexShrink: 0, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {genres.slice(0, 2).map(g => (
+                        <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', background: 'rgba(194,65,12,0.12)', padding: '2px 6px', borderRadius: 3 }}>{g}</span>
+                      ))}
+                    </div>
+                    <div style={{ flexShrink: 0, fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(11px, 1vw, 15px)', color: '#fff', textTransform: 'uppercase', lineHeight: 1.1, letterSpacing: '-0.01em' }}>{rec.title}</div>
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+                    {details?.overview
+                      ? <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: 'rgba(255,255,255,0.68)', lineHeight: 1.55 }}>{details.overview}</p>
+                      : <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: MUTED }}>No description.</p>
+                    }
+                    {details?.cast && details.cast.length > 0 && (
+                      <p style={{ flexShrink: 0, fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.38)', lineHeight: 1.4 }}>{details.cast.join(' · ')}</p>
                     )}
                   </div>
-                ) : (
-                  /* Default bottom overlay */
-                  <div style={{
-                    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1,
-                    padding: '28px 10px 10px',
-                    background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)',
-                  }}>
-                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(11px, 1.1vw, 16px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: 3 }}>{rec.title}</div>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{genres[0]}</span>
-                  </div>
-                )}
+                </div>
               </div>
             )
           })}
@@ -1253,21 +1185,21 @@ export default function Home() {
 
       {/* Feedback section */}
       <div style={{
-        borderTop: '1px solid #1A1612', padding: '40px 24px 48px',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+        borderTop: '1px solid #1A1612', padding: '24px 32px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         background: '#0E0C0A',
       }}>
         {feedback === null ? (
           <>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 6 }}>
+            <div>
+              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 20, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 4 }}>
                 Were these recommendations good?
               </div>
               <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>
                 Your film twin is Viewer #{matchedUser} out of 610 real viewers.
               </p>
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
               <button
                 onClick={() => submitFeedback('up')}
                 style={{
@@ -1307,33 +1239,33 @@ export default function Home() {
             </div>
           </>
         ) : (
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{
-              width: 56, height: 56, borderRadius: '50%', margin: '0 auto 16px',
+              width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
               background: feedback === 'up' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
               border: `2px solid ${feedback === 'up' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               {feedback === 'up' ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/>
                   <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
                 </svg>
               ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/>
                   <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
                 </svg>
               )}
             </div>
-            <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 20, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 6 }}>
-              {feedback === 'up' ? 'Thanks for the love!' : 'Thanks for the honesty!'}
+            <div>
+              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 18, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+                {feedback === 'up' ? 'Thanks for the love!' : 'Thanks for the honesty!'}
+              </div>
+              <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginTop: 2 }}>
+                {feedback === 'up' ? 'Glad the algorithm found your film twin.' : 'The model is still learning — try rating more films.'}
+              </p>
             </div>
-            <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>
-              {feedback === 'up'
-                ? 'Glad the algorithm found your film twin.'
-                : 'The model is still learning — try rating more films for a better match.'}
-            </p>
           </div>
         )}
       </div>
