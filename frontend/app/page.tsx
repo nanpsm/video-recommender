@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase, Recommendation } from '@/lib/supabase'
+import { SwipeableCardStack, SwipeableCardStackHandle } from '@/components/ui/tinder-like-swipe'
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -108,15 +109,6 @@ function posterStyle(genres: string[]): React.CSSProperties {
   }
 }
 
-function MiniPoster({ genres, style }: { genres: string[]; style?: React.CSSProperties }) {
-  return (
-    <div style={{
-      width: 28, height: 40, borderRadius: 4, flexShrink: 0,
-      ...posterStyle(genres), ...style
-    }} />
-  )
-}
-
 function GenreChips({ genres }: { genres: string[] }) {
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -166,6 +158,7 @@ export default function Home() {
   const [feedback, setFeedback]      = useState<'up' | 'down' | null>(null)
   const [selectedRec, setSelectedRec] = useState<number | null>(null)
   const [feedbackStats, setFeedbackStats] = useState<{ up: number; total: number } | null>(null)
+  const cardStackRef = useRef<SwipeableCardStackHandle>(null)
 
   async function submitFeedback(rating: 'up' | 'down') {
     setFeedback(rating)
@@ -204,7 +197,6 @@ export default function Home() {
   const likedIndices = Object.entries(votes).filter(([, v]) => v === 'like').map(([i]) => parseInt(i))
   const likedCount   = likedIndices.length
   const done         = currentIndex >= FILMS.length
-  const ready        = likedCount >= 2
 
   function vote(v: Vote) {
     setVotes(prev => ({ ...prev, [currentIndex]: v }))
@@ -735,11 +727,12 @@ export default function Home() {
       {/* Card area */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 80, padding: '32px 56px' }}>
 
-        {/* NOPE side */}
-        <div style={{ width: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        {/* SKIP side */}
+        <button onClick={() => cardStackRef.current?.swipeLeft()} style={{ width: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer' }}>
           <div style={{
             width: 64, height: 64, borderRadius: '50%', border: `3px solid ${NEGATIVE}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.15s',
           }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={NEGATIVE} strokeWidth="2.5" strokeLinecap="round">
               <path d="M18 6L6 18M6 6l12 12" />
@@ -748,94 +741,65 @@ export default function Home() {
           <span style={{
             fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
             fontSize: 22, letterSpacing: '0.08em', textTransform: 'uppercase', color: NEGATIVE,
-          }}>Nope</span>
-        </div>
+          }}>Skip</span>
+        </button>
 
         {/* Card stack */}
         <div style={{ position: 'relative', width: 380, height: 560 }}>
           {!done ? (
-            <>
-              {/* Back card */}
-              {currentIndex + 2 < FILMS.length && (
-                <div style={{
-                  position: 'absolute', inset: 0, borderRadius: 24,
-                  transform: 'rotate(-5deg) translateY(22px) scale(0.91)',
-                  overflow: 'hidden',
-                  ...(posters[FILMS[currentIndex + 2].id]
-                    ? { background: '#111' }
-                    : posterStyle(FILMS[currentIndex + 2].genres)),
-                }}>
-                  {posters[FILMS[currentIndex + 2].id] && (
-                    <img src={posters[FILMS[currentIndex + 2].id]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />
-                  )}
-                </div>
-              )}
-              {/* Mid card */}
-              {currentIndex + 1 < FILMS.length && (
-                <div style={{
-                  position: 'absolute', inset: 0, borderRadius: 24,
-                  transform: 'rotate(3deg) translateY(11px) scale(0.95)',
-                  overflow: 'hidden',
-                  ...(posters[FILMS[currentIndex + 1].id]
-                    ? { background: '#111' }
-                    : posterStyle(FILMS[currentIndex + 1].genres)),
-                }}>
-                  {posters[FILMS[currentIndex + 1].id] && (
-                    <img src={posters[FILMS[currentIndex + 1].id]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />
-                  )}
-                </div>
-              )}
-              {/* Front card */}
-              <div style={{
-                position: 'absolute', inset: 0, borderRadius: 24, overflow: 'hidden',
-                boxShadow: '0 8px 40px rgba(26,24,20,0.18)', background: '#111',
-              }}>
-                {/* Poster — full card */}
-                {posters[FILMS[currentIndex].id] ? (
-                  <img
-                    src={posters[FILMS[currentIndex].id]}
-                    alt={FILMS[currentIndex].title}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <div style={{ position: 'absolute', inset: 0, ...posterStyle(FILMS[currentIndex].genres) }} />
-                )}
-
-                {/* Counter badge */}
-                <span style={{
-                  position: 'absolute', top: 16, left: 18,
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
-                  color: 'rgba(255,255,255,0.6)', letterSpacing: '0.1em',
-                  background: 'rgba(0,0,0,0.3)', padding: '3px 8px', borderRadius: 6,
-                }}>
-                  {String(currentIndex + 1).padStart(2, '0')} / 12
-                </span>
-
-                {/* Title + meta overlay at bottom */}
-                <div style={{
-                  position: 'absolute', bottom: 0, left: 0, right: 0,
-                  padding: '64px 24px 22px',
-                  background: 'linear-gradient(to top, rgba(10,8,6,0.92) 0%, rgba(10,8,6,0.6) 60%, transparent 100%)',
-                }}>
-                  <div style={{
-                    fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                    fontSize: 48, lineHeight: 0.92, textTransform: 'uppercase',
-                    color: '#fff', letterSpacing: '-0.01em', marginBottom: 10,
+            <SwipeableCardStack
+              ref={cardStackRef}
+              images={FILMS.map(f => posters[f.id] ?? '')}
+              borderRadius={24}
+              onSwipeRight={i => { setVotes(prev => ({ ...prev, [i]: 'like' })); setIndex(i + 1) }}
+              onSwipeLeft={i => { setVotes(prev => ({ ...prev, [i]: 'skip' })); setIndex(i + 1) }}
+              renderOverlay={(i, isTop) => isTop ? (
+                <>
+                  {/* Counter badge */}
+                  <span style={{
+                    position: 'absolute', top: 16, left: 18, zIndex: 5,
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                    color: 'rgba(255,255,255,0.6)', letterSpacing: '0.1em',
+                    background: 'rgba(0,0,0,0.3)', padding: '3px 8px', borderRadius: 6,
                   }}>
-                    {FILMS[currentIndex].title}
+                    {String(i + 1).padStart(2, '0')} / {FILMS.length}
+                  </span>
+                  {/* Title + meta overlay */}
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 5,
+                    padding: '64px 24px 22px',
+                    background: 'linear-gradient(to top, rgba(10,8,6,0.92) 0%, rgba(10,8,6,0.6) 60%, transparent 100%)',
+                  }}>
+                    <div style={{
+                      fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
+                      fontSize: 48, lineHeight: 0.92, textTransform: 'uppercase',
+                      color: '#fff', letterSpacing: '-0.01em', marginBottom: 10,
+                    }}>
+                      {FILMS[i].title}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+                        {FILMS[i].year}
+                      </span>
+                      <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>·</span>
+                      <GenreChips genres={FILMS[i].genres} />
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
-                      fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
-                      color: 'rgba(255,255,255,0.55)',
-                    }}>{FILMS[currentIndex].year}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>·</span>
-                    <GenreChips genres={FILMS[currentIndex].genres} />
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
+                </>
+              ) : null}
+            />
+          ) : null}
+          {/* Hint — shown while rating */}
+          {!done && (
+            <p style={{
+              position: 'absolute', bottom: -36, left: 0, right: 0, textAlign: 'center',
+              fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12,
+              color: MUTED, letterSpacing: '0.01em',
+            }}>
+              Haven't seen it? Just skip →
+            </p>
+          )}
+          {!done ? null : (
             <div style={{
               position: 'absolute', inset: 0, borderRadius: 24, overflow: 'hidden',
               background: '#1C1814', boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
@@ -896,10 +860,11 @@ export default function Home() {
         </div>
 
         {/* LIKE side */}
-        <div style={{ width: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        <button onClick={() => cardStackRef.current?.swipeRight()} style={{ width: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer' }}>
           <div style={{
             width: 64, height: 64, borderRadius: '50%', border: `3px solid ${ACCENT}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'background 0.15s',
           }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill={ACCENT} stroke={ACCENT} strokeWidth="1.5">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
@@ -909,59 +874,13 @@ export default function Home() {
             fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
             fontSize: 22, letterSpacing: '0.08em', textTransform: 'uppercase', color: ACCENT,
           }}>Like</span>
-        </div>
+        </button>
       </div>
 
-      {/* Action buttons row */}
-      {!done && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, paddingBottom: 28 }}>
-          <button onClick={() => vote('skip')} style={{
-            width: 64, height: 64, borderRadius: '50%', background: '#fff',
-            border: `2px solid ${BORDER}`, cursor: 'pointer',
-            boxShadow: '0 4px 16px rgba(26,24,20,0.08)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={MUTED} strokeWidth="2.5" strokeLinecap="round">
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
-          </button>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: FAINT }}>
-            {currentIndex + 1} / 12
-          </span>
-          <button onClick={() => vote('like')} style={{
-            width: 72, height: 72, borderRadius: '50%', background: ACCENT,
-            border: 'none', cursor: 'pointer',
-            boxShadow: '0 6px 24px rgba(194,65,12,0.32)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="#fff" stroke="#fff" strokeWidth="1.5">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       {error && (
         <div style={{ padding: '12px 56px', textAlign: 'center' }}>
           <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: '#B91C1C' }}>{error}</span>
-        </div>
-      )}
-      {!done && ready && (
-        <div style={{
-          background: ACCENT, padding: '16px 56px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 16, fontWeight: 600, color: '#fff' }}>
-            {likedCount} film{likedCount !== 1 ? 's' : ''} liked — ready to match!
-          </span>
-          <button onClick={getRecommendations} style={{
-            background: '#fff', color: ACCENT, border: 'none', cursor: 'pointer',
-            fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 15,
-            padding: '0 24px', height: 44, borderRadius: 10,
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            See results →
-          </button>
         </div>
       )}
     </div>
