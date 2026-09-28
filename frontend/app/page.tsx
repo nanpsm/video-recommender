@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase, Recommendation } from '@/lib/supabase'
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -31,18 +31,18 @@ const GENRE_GRADIENT: Record<string, [string, string]> = {
 }
 
 const FILMS = [
-  { id: 318,   title: 'The Shawshank Redemption', year: 1994, genres: ['Drama'] },
-  { id: 296,   title: 'Pulp Fiction',              year: 1994, genres: ['Crime', 'Drama'] },
-  { id: 2571,  title: 'The Matrix',                year: 1999, genres: ['Action', 'Sci-Fi'] },
-  { id: 356,   title: 'Forrest Gump',              year: 1994, genres: ['Comedy', 'Drama'] },
-  { id: 260,   title: 'Star Wars: A New Hope',     year: 1977, genres: ['Action', 'Adventure'] },
-  { id: 593,   title: 'The Silence of the Lambs',  year: 1991, genres: ['Crime', 'Horror'] },
-  { id: 4993,  title: 'The Lord of the Rings',     year: 2001, genres: ['Adventure', 'Drama'] },
-  { id: 58559, title: 'The Dark Knight',           year: 2008, genres: ['Action', 'Crime'] },
-  { id: 79132, title: 'Inception',                 year: 2010, genres: ['Action', 'Mystery'] },
-  { id: 2959,  title: 'Fight Club',                year: 1999, genres: ['Drama', 'Thriller'] },
-  { id: 1,     title: 'Toy Story',                 year: 1995, genres: ['Animation', 'Comedy'] },
-  { id: 1721,  title: 'Jurassic Park',             year: 1993, genres: ['Adventure', 'Sci-Fi'] },
+  { id: 318,   tmdbId: 278,   title: 'The Shawshank Redemption', year: 1994, genres: ['Drama'] },
+  { id: 296,   tmdbId: 680,   title: 'Pulp Fiction',              year: 1994, genres: ['Crime', 'Drama'] },
+  { id: 2571,  tmdbId: 603,   title: 'The Matrix',                year: 1999, genres: ['Action', 'Sci-Fi'] },
+  { id: 356,   tmdbId: 13,    title: 'Forrest Gump',              year: 1994, genres: ['Comedy', 'Drama'] },
+  { id: 260,   tmdbId: 11,    title: 'Star Wars: A New Hope',     year: 1977, genres: ['Action', 'Adventure'] },
+  { id: 593,   tmdbId: 274,   title: 'The Silence of the Lambs',  year: 1991, genres: ['Crime', 'Horror'] },
+  { id: 4993,  tmdbId: 120,   title: 'The Lord of the Rings',     year: 2001, genres: ['Adventure', 'Drama'] },
+  { id: 58559, tmdbId: 155,   title: 'The Dark Knight',           year: 2008, genres: ['Action', 'Crime'] },
+  { id: 79132, tmdbId: 27205, title: 'Inception',                 year: 2010, genres: ['Action', 'Mystery'] },
+  { id: 2959,  tmdbId: 550,   title: 'Fight Club',                year: 1999, genres: ['Drama', 'Thriller'] },
+  { id: 1,     tmdbId: 862,   title: 'Toy Story',                 year: 1995, genres: ['Animation', 'Comedy'] },
+  { id: 1721,  tmdbId: 329,   title: 'Jurassic Park',             year: 1993, genres: ['Adventure', 'Sci-Fi'] },
 ]
 
 type Vote = 'like' | 'skip'
@@ -108,6 +108,30 @@ export default function Home() {
   const [recs, setRecs]           = useState<Recommendation[]>([])
   const [matchedUser, setMatchedUser] = useState<number | null>(null)
   const [error, setError]         = useState('')
+  const [modal, setModal]         = useState<'how' | 'data' | 'match' | null>(null)
+  const [posters, setPosters]     = useState<Record<number, string>>({})
+  const [recPosters, setRecPosters]  = useState<Record<number, string>>({})
+  const [recDetails, setRecDetails]  = useState<Record<number, { overview: string; cast: string[] }>>({})
+  const [hoveredRec, setHoveredRec]  = useState<number | null>(null)
+
+  useEffect(() => {
+    const token = process.env.NEXT_PUBLIC_TMDB_TOKEN
+    if (!token) return
+    Promise.all(
+      FILMS.map(f =>
+        fetch(`https://api.themoviedb.org/3/movie/${f.tmdbId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then(r => r.json())
+          .then(d => d.poster_path ? [f.id, `https://image.tmdb.org/t/p/w342${d.poster_path}`] : null)
+          .catch(() => null)
+      )
+    ).then(results => {
+      const map: Record<number, string> = {}
+      for (const r of results) if (r) map[r[0] as number] = r[1] as string
+      setPosters(map)
+    })
+  }, [])
 
   const likedIndices = Object.entries(votes).filter(([, v]) => v === 'like').map(([i]) => parseInt(i))
   const likedCount   = likedIndices.length
@@ -150,33 +174,167 @@ export default function Home() {
       .eq('user_id', best).order('rank')
     if (re || !recData) { setError(re?.message ?? 'Error'); setStep('rate'); return }
 
-    setRecs(recData as Recommendation[])
+    const recList = recData as Recommendation[]
+    setRecs(recList)
     setMatchedUser(best)
     setStep('results')
+
+    // Fetch TMDB posters for recommendations
+    const token = process.env.NEXT_PUBLIC_TMDB_TOKEN
+    if (token) {
+      // Clean MovieLens title format: "General, The (1926)" → { title: "The General", year: "1926" }
+      function parseTitle(raw: string): { title: string; year: string } {
+        const yearMatch = raw.match(/\((\d{4})\)\s*$/)
+        const year = yearMatch?.[1] ?? ''
+        let title = raw.replace(/\s*\(\d{4}\)\s*$/, '').trim()
+        // "Title, The" / "Title, A" / "Title, An" → "The Title" etc.
+        const articleMatch = title.match(/^(.*),\s*(The|A|An)$/i)
+        if (articleMatch) title = `${articleMatch[2]} ${articleMatch[1].trim()}`
+        return { title, year }
+      }
+
+      async function fetchMovieData(movieId: number, rawTitle: string): Promise<{ id: number; poster: string | null; overview: string; cast: string[] }> {
+        const { title, year } = parseTitle(rawTitle)
+        const base = 'https://api.themoviedb.org/3/search/movie'
+        const headers = { Authorization: `Bearer ${token}` }
+        let tmdbId: number | null = null
+        let poster: string | null = null
+        let overview = ''
+
+        for (const q of [`${base}?query=${encodeURIComponent(title)}&year=${year}&page=1`, `${base}?query=${encodeURIComponent(title)}&page=1`]) {
+          try {
+            const d = await fetch(q, { headers }).then(r => r.json())
+            const hit = d.results?.[0]
+            if (hit) {
+              tmdbId   = hit.id
+              overview = hit.overview ?? ''
+              if (hit.poster_path) poster = `https://image.tmdb.org/t/p/w342${hit.poster_path}`
+              break
+            }
+          } catch { /* continue */ }
+        }
+
+        let cast: string[] = []
+        if (tmdbId) {
+          try {
+            const c = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/credits`, { headers }).then(r => r.json())
+            cast = (c.cast ?? []).slice(0, 4).map((a: { name: string }) => a.name)
+          } catch { /* skip */ }
+        }
+
+        return { id: movieId, poster, overview, cast }
+      }
+
+      Promise.all(recList.map(r => fetchMovieData(r.movie_id, r.title))).then(results => {
+        const posterMap: Record<number, string>                            = {}
+        const detailMap: Record<number, { overview: string; cast: string[] }> = {}
+        for (const r of results) {
+          if (r.poster)   posterMap[r.id] = r.poster
+          if (r.overview) detailMap[r.id] = { overview: r.overview, cast: r.cast }
+        }
+        setRecPosters(posterMap)
+        setRecDetails(detailMap)
+      })
+    }
   }
 
   function restart() {
     setStep('rate'); setIndex(0); setVotes({}); setRecs([]); setMatchedUser(null); setError('')
   }
 
+  // ── MODALS ────────────────────────────────────────────────────────────────
+  const modalContent: Record<string, { title: string; rows: { n: string; head: string; body: string }[] }> = {
+    match: {
+      title: 'What is your Film Twin?',
+      rows: [
+        {
+          n: '01', head: 'You rated 12 films',
+          body: `From the films you liked, we built a genre preference vector — a number for each genre representing how much you enjoy it. For example: 60% Drama, 30% Crime, 10% Comedy.`,
+        },
+        {
+          n: '02', head: `Viewer #${matchedUser} is your nearest match`,
+          body: `We compared your genre vector against the profiles of all 610 real MovieLens viewers using cosine similarity — a measure of how closely two taste profiles point in the same direction. Viewer #${matchedUser} had the highest similarity score with you.`,
+        },
+        {
+          n: '03', head: 'These are their top films',
+          body: `The recommendations you see are films that Viewer #${matchedUser} rated highly — predicted by an Apache Spark ALS model trained on 100,836 ratings. Since their taste is closest to yours, their favourites are your best discovery list.`,
+        },
+      ],
+    },
+    how: {
+      title: 'How it works',
+      rows: [
+        {
+          n: '01', head: 'Rate 12 films',
+          body: 'We show you 12 well-known films one at a time. Like the ones you enjoyed, skip the ones you haven\'t seen or didn\'t like. You need at least two likes to continue.',
+        },
+        {
+          n: '02', head: 'Cosine similarity match',
+          body: 'Your likes are turned into a genre preference vector (e.g. 60% Action, 40% Drama). We compare that against the genre profiles of all 610 real MovieLens viewers and find the one whose taste is closest to yours.',
+        },
+        {
+          n: '03', head: 'Personalised recommendations',
+          body: 'We look at the films your nearest viewer rated highly — then surface the ones you haven\'t already told us you liked. Those are your top 10 recommendations.',
+        },
+      ],
+    },
+    data: {
+      title: 'The data',
+      rows: [
+        {
+          n: '—', head: 'MovieLens ml-latest-small',
+          body: '100,836 ratings from 610 real users across 9,742 films. Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 to 5.0.',
+        },
+        {
+          n: '—', head: 'Apache Spark ALS',
+          body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=20, regParam=0.1) running on Apache Spark. The model achieves RMSE ≈ 0.83 on a held-out test set.',
+        },
+        {
+          n: '—', head: 'Genre profiles in Supabase',
+          body: 'For each of the 610 users, a unit-normalised genre preference vector is precomputed from their liked ratings and stored in Supabase. The browser fetches all 9,295 rows and runs the cosine similarity in-memory — no server round-trip needed.',
+        },
+      ],
+    },
+  }
+
+  const activeModal = modal ? modalContent[modal] : null
+
   // ── LANDING ──────────────────────────────────────────────────────────────
   if (step === 'landing') return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: CREAM, overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: CREAM }}>
+      {ModalOverlay}
 
-      {/* Nav */}
-      <header style={{
-        height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 56px', borderBottom: `1px solid ${BORDER}`,
-        background: DARK,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 6, background: ACCENT,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 13, color: '#fff' }}>MM</span>
+      {/* Nav — split: dark left / cream right */}
+      <header style={{ display: 'flex', height: 56, flexShrink: 0 }}>
+        {/* Logo on dark side */}
+        <div style={{
+          width: '52%', background: DARK, display: 'flex', alignItems: 'center',
+          padding: '0 40px', borderBottom: `1px solid #2E2A25`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 6, background: ACCENT,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 12, color: '#fff' }}>FT</span>
+            </div>
+            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: '#fff' }}>FilmTwin</span>
           </div>
-          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 17, color: '#fff' }}>MovieMatch</span>
+        </div>
+        {/* Links on cream side */}
+        <div style={{
+          flex: 1, background: CREAM, display: 'flex', alignItems: 'center',
+          justifyContent: 'flex-end', padding: '0 40px', gap: 32,
+          borderBottom: `1px solid ${BORDER}`,
+        }}>
+          <span
+            onClick={() => setModal('how')}
+            style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: '#5A5449', cursor: 'pointer', userSelect: 'none' }}
+          >How it works</span>
+          <span
+            onClick={() => setModal('data')}
+            style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: '#5A5449', cursor: 'pointer', userSelect: 'none' }}
+          >The data</span>
         </div>
       </header>
 
@@ -185,16 +343,16 @@ export default function Home() {
 
         {/* Left — dark */}
         <div style={{
-          width: '55%', background: DARK, padding: '48px 56px 52px', display: 'flex',
-          flexDirection: 'column', justifyContent: 'space-between', position: 'relative',
+          width: '52%', background: DARK, padding: '44px 40px 44px',
+          display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
           backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 48px)',
         }}>
           <div>
-            <Eyebrow color={ACCENT}>ML-powered · Apache Spark ALS · MovieLens</Eyebrow>
-            <div style={{ marginTop: 28 }}>
+            <Eyebrow color={'#5A5449'}>Collaborative filtering · Apache Spark ALS</Eyebrow>
+            <div style={{ marginTop: 20 }}>
               <div style={{
                 fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                fontSize: 'clamp(80px, 9vw, 136px)', lineHeight: 0.87,
+                fontSize: 'clamp(72px, 8.5vw, 128px)', lineHeight: 0.87,
                 letterSpacing: '-0.02em', textTransform: 'uppercase',
               }}>
                 <div style={{ color: '#fff' }}>FIND</div>
@@ -203,41 +361,41 @@ export default function Home() {
               </div>
             </div>
             <p style={{
-              marginTop: 32, fontSize: 17, color: MUTED, lineHeight: 1.6,
-              fontFamily: "'Hanken Grotesk', sans-serif", maxWidth: 480,
+              marginTop: 28, fontSize: 16, color: MUTED, lineHeight: 1.6,
+              fontFamily: "'Hanken Grotesk', sans-serif", maxWidth: 420,
             }}>
-              Rate 12 classic films. We analyse your taste, match you to the most
-              similar viewer from 100,000 real ratings, and surface what they loved next.
+              Rate 12 films you know. We match you with the real
+              viewer — out of 610 — whose taste is closest to yours,
+              then show you what they loved.
             </p>
-            <button
-              onClick={() => setStep('rate')}
-              style={{
-                marginTop: 36, display: 'inline-flex', alignItems: 'center', gap: 10,
-                background: ACCENT, color: '#fff', border: 'none', cursor: 'pointer',
-                fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 17,
-                padding: '0 32px', height: 58, borderRadius: 10,
-                boxShadow: '0 4px 20px rgba(194,65,12,0.3)',
-              }}>
-              Rate 12 films
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
-            <p style={{ marginTop: 12, fontSize: 13, color: '#4A453D', fontFamily: "'Hanken Grotesk', sans-serif" }}>
-              No account needed · takes ~30 seconds
-            </p>
+            <div style={{ marginTop: 32, display: 'flex', alignItems: 'center', gap: 20 }}>
+              <button
+                onClick={() => setStep('rate')}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 10,
+                  background: ACCENT, color: '#fff', border: 'none', cursor: 'pointer',
+                  fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 16,
+                  padding: '0 28px', height: 52, borderRadius: 100,
+                  boxShadow: '0 4px 20px rgba(194,65,12,0.3)', whiteSpace: 'nowrap',
+                }}>
+                Start matching →
+              </button>
+              <span style={{ fontSize: 13, color: '#4A453D', fontFamily: "'Hanken Grotesk', sans-serif" }}>
+                No account · ~30 seconds
+              </span>
+            </div>
           </div>
 
           {/* Stat bar */}
           <div style={{
-            borderTop: `1px solid #2E2A25`, paddingTop: 24, marginTop: 40,
-            display: 'flex', gap: 48,
+            borderTop: `1px solid #2E2A25`, paddingTop: 24,
+            display: 'flex', gap: 40,
           }}>
-            {[['610', 'Viewers'], ['9,742', 'Movies'], ['100K', 'Ratings']].map(([n, l]) => (
+            {[['610', 'Viewers'], ['9,742', 'Films'], ['100K', 'Ratings']].map(([n, l]) => (
               <div key={l}>
                 <div style={{
                   fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                  fontSize: 30, color: '#fff',
+                  fontSize: 32, color: '#fff', lineHeight: 1,
                 }}>{n}</div>
                 <Eyebrow color="#4A453D">{l}</Eyebrow>
               </div>
@@ -249,56 +407,97 @@ export default function Home() {
         <div style={{
           flex: 1, background: CREAM, position: 'relative', overflow: 'hidden',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '40px 56px',
+          padding: '40px 48px',
         }}>
           {/* 610 watermark */}
           <div style={{
-            position: 'absolute', bottom: -20, right: -10,
+            position: 'absolute', bottom: -40, right: -20,
             fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-            fontSize: 380, lineHeight: 1, color: '#F0EBE2', userSelect: 'none',
+            fontSize: 340, lineHeight: 1, color: '#EDE8DF', userSelect: 'none',
             pointerEvents: 'none', letterSpacing: '-0.04em',
           }}>610</div>
 
-          {/* Demo match card */}
+          {/* Demo card */}
           <div style={{
-            background: '#fff', borderRadius: 20, border: `1px solid ${BORDER}`,
-            boxShadow: '0 2px 4px rgba(26,24,20,0.04), 0 16px 40px -16px rgba(26,24,20,0.14)',
-            padding: '28px 28px 24px', width: 360, position: 'relative', zIndex: 1,
+            background: '#fff', borderRadius: 16, border: `1px solid ${BORDER}`,
+            boxShadow: '0 2px 4px rgba(26,24,20,0.04), 0 16px 40px -16px rgba(26,24,20,0.12)',
+            width: 380, position: 'relative', zIndex: 1, overflow: 'hidden',
           }}>
-            <Eyebrow color={ACCENT}>You liked</Eyebrow>
-            <div style={{ display: 'flex', gap: 10, marginTop: 10, marginBottom: 20 }}>
-              {[['Drama'], ['Action', 'Sci-Fi']].map((g, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MiniPoster genres={g} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: DARK, fontFamily: "'Hanken Grotesk', sans-serif" }}>
-                    {i === 0 ? 'Shawshank' : 'The Matrix'}
-                  </span>
-                </div>
-              ))}
+            {/* Card header */}
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '14px 20px', borderBottom: `1px solid ${BORDER}`,
+            }}>
+              <Eyebrow color={MUTED}>Example · How it works</Eyebrow>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: ACCENT }} />
+                <Eyebrow color={ACCENT}>Match found</Eyebrow>
+              </div>
             </div>
 
-            {/* Ticket divider */}
-            <div style={{ position: 'relative', height: 0, borderTop: '2px dashed #E0D9CC', margin: '0 -4px' }}>
-              <span style={{ position: 'absolute', left: -20, top: -12, width: 22, height: 22, borderRadius: '50%', background: CREAM, border: `1px solid ${BORDER}` }} />
-              <span style={{ position: 'absolute', right: -20, top: -12, width: 22, height: 22, borderRadius: '50%', background: CREAM, border: `1px solid ${BORDER}` }} />
-            </div>
-
-            <div style={{ paddingTop: 20 }}>
-              <Eyebrow color="#6B655A">Nearest viewer · #{26}</Eyebrow>
-              <p style={{ fontSize: 13, color: MUTED, marginTop: 4, marginBottom: 16, fontFamily: "'Hanken Grotesk', sans-serif" }}>
-                They also loved
-              </p>
-              {[
-                { title: 'Yojimbo', genres: ['Action', 'Adventure'] },
-                { title: 'The Apartment', genres: ['Comedy', 'Drama'] },
-                { title: 'In Bruges', genres: ['Comedy', 'Crime'] },
-              ].map(f => (
-                <div key={f.title} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <MiniPoster genres={f.genres} />
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: DARK, fontFamily: "'Hanken Grotesk', sans-serif" }}>{f.title}</p>
-                    <p style={{ fontSize: 11, color: MUTED, fontFamily: "'Hanken Grotesk', sans-serif" }}>{f.genres.join(', ')}</p>
+            {/* Row 01 — You liked */}
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BORDER}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, fontWeight: 400 }}>01</span>
+                <Eyebrow color={'#5A5449'}>You liked</Eyebrow>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {[
+                  { title: 'Pulp Fiction', year: 1994, genres: ['Crime', 'Drama'] },
+                  { title: 'The Matrix',   year: 1999, genres: ['Action', 'Sci-Fi'] },
+                ].map(f => (
+                  <div key={f.title} style={{
+                    flex: 1, display: 'flex', alignItems: 'center', gap: 10,
+                    background: CREAM, borderRadius: 8, padding: '8px 12px',
+                    border: `1px solid ${BORDER}`,
+                  }}>
+                    <MiniPoster genres={f.genres} />
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: DARK, fontFamily: "'Hanken Grotesk', sans-serif" }}>{f.title}</p>
+                      <p style={{ fontSize: 11, color: FAINT, fontFamily: "'JetBrains Mono', monospace" }}>{f.year}</p>
+                    </div>
                   </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Row 02 — Nearest viewer */}
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${BORDER}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT }}>02</span>
+                <Eyebrow color={'#5A5449'}>Your nearest viewer</Eyebrow>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span style={{
+                  fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
+                  fontSize: 40, color: ACCENT, lineHeight: 1, textTransform: 'uppercase',
+                }}>Viewer #26</span>
+                <span style={{ fontSize: 13, color: MUTED, fontFamily: "'Hanken Grotesk', sans-serif" }}>
+                  out of 610 real viewers
+                </span>
+              </div>
+            </div>
+
+            {/* Row 03 — They also loved */}
+            <div style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT }}>03</span>
+                <Eyebrow color={'#5A5449'}>They also loved</Eyebrow>
+              </div>
+              {[
+                { n: 1, title: 'Yojimbo',                         year: 1961 },
+                { n: 2, title: 'A Grand Day Out',                 year: 1989 },
+                { n: 3, title: 'Three Billboards Outside Ebbing', year: 2017 },
+              ].map(f => (
+                <div key={f.title} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '7px 0', borderTop: `1px solid ${BORDER}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT, width: 12 }}>{f.n}</span>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: DARK, fontFamily: "'Hanken Grotesk', sans-serif" }}>{f.title}</span>
+                  </div>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT }}>{f.year}</span>
                 </div>
               ))}
             </div>
@@ -306,25 +505,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* How it works bar */}
-      <div style={{
-        background: DARK, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-        backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 48px)',
-      }}>
-        {[
-          { n: '01', title: 'Rate', body: 'Like or skip 12 well-known films to signal your taste.' },
-          { n: '02', title: 'Match', body: 'Cosine similarity finds your nearest viewer from 610 real profiles.' },
-          { n: '03', title: 'Watch', body: 'See the films they rated highly that you haven\'t seen yet.' },
-          { n: '—', title: 'The data', body: 'MovieLens ml-latest-small · 100,836 ratings · Spark ALS rank 20.' },
-        ].map((s, i) => (
-          <div key={s.n} style={{
-            padding: '28px 32px', borderLeft: i > 0 ? `1px solid #2E2A25` : 'none',
-          }}>
-            <Eyebrow color={ACCENT}>{s.n} · {s.title}</Eyebrow>
-            <p style={{ marginTop: 8, fontSize: 14, color: '#A09890', lineHeight: 1.55, fontFamily: "'Hanken Grotesk', sans-serif" }}>{s.body}</p>
-          </div>
-        ))}
-      </div>
     </div>
   )
 
@@ -344,9 +524,9 @@ export default function Home() {
             width: 30, height: 30, borderRadius: 6, background: ACCENT,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 12, color: '#fff' }}>MM</span>
+            <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 12, color: '#fff' }}>FT</span>
           </div>
-          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: DARK }}>MovieMatch</span>
+          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 16, color: DARK }}>FilmTwin</span>
         </button>
 
         {/* 12-segment progress bar */}
@@ -395,59 +575,78 @@ export default function Home() {
                 <div style={{
                   position: 'absolute', inset: 0, borderRadius: 24,
                   transform: 'rotate(-5deg) translateY(22px) scale(0.91)',
-                  ...posterStyle(FILMS[currentIndex + 2].genres),
-                }} />
+                  overflow: 'hidden',
+                  ...(posters[FILMS[currentIndex + 2].id]
+                    ? { background: '#111' }
+                    : posterStyle(FILMS[currentIndex + 2].genres)),
+                }}>
+                  {posters[FILMS[currentIndex + 2].id] && (
+                    <img src={posters[FILMS[currentIndex + 2].id]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />
+                  )}
+                </div>
               )}
               {/* Mid card */}
               {currentIndex + 1 < FILMS.length && (
                 <div style={{
                   position: 'absolute', inset: 0, borderRadius: 24,
                   transform: 'rotate(3deg) translateY(11px) scale(0.95)',
-                  ...posterStyle(FILMS[currentIndex + 1].genres),
-                }} />
+                  overflow: 'hidden',
+                  ...(posters[FILMS[currentIndex + 1].id]
+                    ? { background: '#111' }
+                    : posterStyle(FILMS[currentIndex + 1].genres)),
+                }}>
+                  {posters[FILMS[currentIndex + 1].id] && (
+                    <img src={posters[FILMS[currentIndex + 1].id]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.7 }} />
+                  )}
+                </div>
               )}
               {/* Front card */}
               <div style={{
                 position: 'absolute', inset: 0, borderRadius: 24, overflow: 'hidden',
-                boxShadow: '0 8px 40px rgba(26,24,20,0.18)', background: '#fff',
+                boxShadow: '0 8px 40px rgba(26,24,20,0.18)', background: '#111',
               }}>
-                {/* Poster area — top 66% */}
-                <div style={{ height: '66%', position: 'relative', ...posterStyle(FILMS[currentIndex].genres) }}>
-                  <span style={{
-                    position: 'absolute', top: 16, left: 18,
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 400,
-                    color: 'rgba(26,24,20,0.45)', letterSpacing: '0.1em',
-                  }}>
-                    {String(currentIndex + 1).padStart(2, '0')} / 12
-                  </span>
-                  <div style={{
-                    position: 'absolute', bottom: 0, left: 0, right: 0, padding: '32px 24px 20px',
-                    background: 'linear-gradient(to top, rgba(26,24,20,0.5), transparent)',
-                  }}>
-                    <div style={{
-                      fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                      fontSize: 56, lineHeight: 0.9, textTransform: 'uppercase',
-                      color: '#fff', letterSpacing: '-0.01em',
-                    }}>
-                      {FILMS[currentIndex].title}
-                    </div>
-                  </div>
-                </div>
+                {/* Poster — full card */}
+                {posters[FILMS[currentIndex].id] ? (
+                  <img
+                    src={posters[FILMS[currentIndex].id]}
+                    alt={FILMS[currentIndex].title}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ position: 'absolute', inset: 0, ...posterStyle(FILMS[currentIndex].genres) }} />
+                )}
 
-                {/* Info area — bottom 34% */}
-                <div style={{ padding: '18px 24px 16px', background: '#fff' }}>
-                  <p style={{
-                    fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 15,
-                    color: MUTED, marginBottom: 8,
+                {/* Counter badge */}
+                <span style={{
+                  position: 'absolute', top: 16, left: 18,
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+                  color: 'rgba(255,255,255,0.6)', letterSpacing: '0.1em',
+                  background: 'rgba(0,0,0,0.3)', padding: '3px 8px', borderRadius: 6,
+                }}>
+                  {String(currentIndex + 1).padStart(2, '0')} / 12
+                </span>
+
+                {/* Title + meta overlay at bottom */}
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  padding: '64px 24px 22px',
+                  background: 'linear-gradient(to top, rgba(10,8,6,0.92) 0%, rgba(10,8,6,0.6) 60%, transparent 100%)',
+                }}>
+                  <div style={{
+                    fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
+                    fontSize: 48, lineHeight: 0.92, textTransform: 'uppercase',
+                    color: '#fff', letterSpacing: '-0.01em', marginBottom: 10,
                   }}>
-                    {FILMS[currentIndex].year} · {FILMS[currentIndex].genres.join(', ')}
-                  </p>
-                  <p style={{
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT,
-                    letterSpacing: '0.08em', marginTop: 'auto',
-                  }}>
-                    SWIPE TO RATE &nbsp;←&nbsp; NOPE · LIKE &nbsp;→
-                  </p>
+                    {FILMS[currentIndex].title}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{
+                      fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                      color: 'rgba(255,255,255,0.55)',
+                    }}>{FILMS[currentIndex].year}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10 }}>·</span>
+                    <GenreChips genres={FILMS[currentIndex].genres} />
+                  </div>
                 </div>
               </div>
             </>
@@ -568,158 +767,280 @@ export default function Home() {
   const rest   = recs.slice(1)
   const liked  = likedIndices.map(i => FILMS[i])
 
+  // shared modal renderer
+  const ModalOverlay = activeModal ? (
+    <div
+      onClick={() => setModal(null)}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.75)',
+        zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: DARK, borderRadius: 20,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.7)',
+          width: '100%', maxWidth: 540, overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: '22px 24px 18px', borderBottom: '1px solid #222018', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Eyebrow color={ACCENT}>{modal === 'match' ? 'How matching works' : modal === 'how' ? 'The process' : 'About the data'}</Eyebrow>
+            <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 24, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em', marginTop: 4 }}>
+              {activeModal.title}
+            </div>
+          </div>
+          <button onClick={() => setModal(null)} style={{ background: '#1E1A16', border: 'none', cursor: 'pointer', color: '#6B6560', width: 32, height: 32, borderRadius: 8, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
+        </div>
+
+        <div style={{ padding: '0 24px 24px' }}>
+          {(modal === 'how' || modal === 'match') ? (
+            /* Dark editorial — number + row */
+            <div>
+              {activeModal.rows.map((row, i) => (
+                <div key={i} style={{
+                  display: 'flex', gap: 16, alignItems: 'flex-start',
+                  padding: '20px 0',
+                  borderBottom: i < activeModal.rows.length - 1 ? '1px solid #1E1A16' : 'none',
+                }}>
+                  {/* Accent step number */}
+                  <div style={{
+                    fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
+                    fontSize: 52, lineHeight: 0.85, color: ACCENT, flexShrink: 0, width: 44,
+                  }}>
+                    {i + 1}
+                  </div>
+                  <div>
+                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 15, color: '#fff', marginBottom: 7 }}>
+                      {row.head}
+                    </p>
+                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: '#6B6560', lineHeight: 1.65 }}>
+                      {row.body}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {/* Stat strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', background: '#1A1612', borderRadius: 12, margin: '20px 0', overflow: 'hidden', border: '1px solid #222018' }}>
+                {[{ n: '100,836', label: 'Ratings' }, { n: '610', label: 'Real viewers' }, { n: '9,742', label: 'Films' }].map((s, i) => (
+                  <div key={s.label} style={{ padding: '16px', textAlign: 'center', borderRight: i < 2 ? '1px solid #222018' : 'none' }}>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 26, color: '#fff', lineHeight: 1 }}>{s.n}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#4A443E', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 5 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {[
+                { tag: 'Dataset', head: 'MovieLens ml-latest-small', body: 'Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 – 5.0.', badge: 'GroupLens · UMN' },
+                { tag: 'Model', head: 'Apache Spark ALS', body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=20, regParam=0.1). RMSE ≈ 0.83 on a held-out test set.', badge: 'RMSE 0.83' },
+                { tag: 'Matching', head: 'Genre profiles in Supabase', body: 'A unit-normalised genre vector is precomputed per user and stored in Supabase. The browser fetches all 9,295 rows and runs cosine similarity in-memory — no extra server round-trip.', badge: '9,295 rows' },
+              ].map((card, i) => (
+                <div key={i} style={{ display: 'flex', gap: 16, padding: '16px 0', borderTop: '1px solid #1E1A16' }}>
+                  <div style={{ width: 68, flexShrink: 0 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: ACCENT, letterSpacing: '0.1em', textTransform: 'uppercase', background: 'rgba(194,65,12,0.12)', padding: '3px 7px', borderRadius: 4, display: 'inline-block' }}>{card.tag}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
+                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: '#fff' }}>{card.head}</p>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#4A443E', background: '#1A1612', border: '1px solid #2A2520', padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap', marginLeft: 10, marginTop: 2 }}>{card.badge}</span>
+                    </div>
+                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: '#6B6560', lineHeight: 1.6 }}>{card.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null
+
   return (
-    <div style={{ height: '100vh', background: CREAM, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: '100vh', background: '#0E0C0A', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {ModalOverlay}
 
       {/* Header */}
       <header style={{
-        height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 56px', borderBottom: `2px solid ${DARK}`, background: '#fff', gap: 24,
+        height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 20px', borderBottom: `1px solid #1E1A16`, background: '#0E0C0A', gap: 16,
       }}>
         <button onClick={() => setStep('landing')} style={{
-          display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
+          display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer',
         }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 6, background: ACCENT,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 12, color: '#fff' }}>MM</span>
+          <div style={{ width: 28, height: 28, borderRadius: 6, background: ACCENT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 11, color: '#fff' }}>FT</span>
           </div>
+          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: '#fff' }}>FilmTwin</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, overflow: 'hidden' }}>
-          <Eyebrow color={ACCENT}>Match found · Viewer #{matchedUser}</Eyebrow>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {liked.slice(0, 3).map((f, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <MiniPoster genres={f.genres} />
-                <span style={{ fontSize: 12, color: MUTED, fontFamily: "'Hanken Grotesk', sans-serif", whiteSpace: 'nowrap' }}>
-                  {f.title.split(':')[0]}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <button
+          onClick={() => setModal('match')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          }}
+        >
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT }} />
+          <Eyebrow color={ACCENT}>Match found · your film twin is viewer #{matchedUser}</Eyebrow>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#4A443E', marginLeft: 2 }}>?</span>
+        </button>
 
         <button onClick={restart} style={{
-          background: 'none', border: `1.5px solid ${BORDER}`, cursor: 'pointer', flexShrink: 0,
-          fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 14, color: '#5A5449',
-          padding: '0 18px', height: 38, borderRadius: 8,
+          background: 'none', border: `1px solid #2A2520`, cursor: 'pointer',
+          fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: '#6B6560',
+          padding: '0 14px', height: 30, borderRadius: 6,
         }}>
           ← Rate again
         </button>
       </header>
 
-      {/* Featured strip — rank 1 */}
-      {top && (
-        <div style={{
-          background: DARK, padding: '0 56px', minHeight: 200,
-          display: 'flex', alignItems: 'center', gap: 48,
-          backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 48px)',
-        }}>
-          {/* Rank col */}
-          <div style={{ width: 160, flexShrink: 0 }}>
-            <Eyebrow color={ACCENT}>Top pick</Eyebrow>
-            <div style={{
-              fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-              fontSize: 80, color: '#fff', lineHeight: 1, marginTop: 4,
-            }}>01</div>
-          </div>
-          {/* Film info */}
-          <div style={{ flex: 1 }}>
-            <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 15, color: MUTED, marginBottom: 6 }}>
-              {top.genres.split('|').join(' · ')}
-            </p>
-            <div style={{
-              fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-              fontSize: 'clamp(32px, 4vw, 72px)', textTransform: 'uppercase',
-              color: '#fff', lineHeight: 0.9, letterSpacing: '-0.01em',
-            }}>
-              {top.title}
-            </div>
-          </div>
-          {/* Genre chips */}
-          <div style={{ width: 200, flexShrink: 0 }}>
-            <GenreChips genres={top.genres.split('|')} />
-          </div>
-        </div>
-      )}
+      {/* Main: big poster left + 3×3 grid right */}
+      <div style={{ flex: 1, display: 'flex', gap: 12, padding: 12, minHeight: 0 }}>
 
-      {/* Grid label bar */}
-      <div style={{
-        height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 56px', borderBottom: `1px solid ${BORDER}`,
-      }}>
-        <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 14, color: DARK }}>
-          Films 2–10
-        </span>
-        <Eyebrow color={MUTED}>Ranked by ALS score</Eyebrow>
-      </div>
-
-      {/* 3×3 grid */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-        gap: 1, background: BORDER, flex: 1, overflow: 'auto',
-      }}>
-        {rest.slice(0, 9).map((rec, i) => {
-          const genres  = rec.genres.split('|')
-          const primary = genres[0]
-          const [light] = GENRE_GRADIENT[primary] ?? ['#E0D9D0', '#C0B9B0']
-          const bg      = i % 2 === 0 ? '#fff' : CREAM
+        {/* LEFT — #1 poster */}
+        {top && (() => {
+          const genres = top.genres.split('|')
+          const poster = recPosters[top.movie_id]
           return (
-            <div key={rec.rank} style={{
-              background: bg, padding: '20px 24px', position: 'relative', overflow: 'hidden',
-              borderTop: `4px solid ${light}`,
-            }}>
-              {/* Rank top-right */}
-              <span style={{
-                position: 'absolute', top: 12, right: 16,
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: ACCENT,
+            <div
+              onMouseEnter={() => setHoveredRec(top.movie_id)}
+              onMouseLeave={() => setHoveredRec(null)}
+              style={{
+                width: '32%', flexShrink: 0, position: 'relative', borderRadius: 12, overflow: 'hidden',
+                background: poster ? '#111' : undefined,
+                boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+                ...(poster ? {} : posterStyle(genres)),
               }}>
-                {String(rec.rank).padStart(2, '0')}
-              </span>
-              {/* Watermark */}
-              <span style={{
-                position: 'absolute', bottom: -16, right: 8,
-                fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                fontSize: 110, color: DARK, opacity: 0.04, lineHeight: 1,
-                userSelect: 'none', pointerEvents: 'none',
-              }}>
-                {rec.rank}
-              </span>
-              {/* Content */}
-              <div style={{ position: 'relative' }}>
-                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: MUTED, marginBottom: 4 }}>
-                  {rec.genres.split('|')[0]}
-                </p>
+              {poster && <img src={poster} alt={top.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s ease', transform: hoveredRec === top.movie_id ? 'scale(1.04)' : 'scale(1)' }} />}
+              {/* Rank badge */}
+              <div style={{
+                position: 'absolute', top: 14, left: 14,
+                background: ACCENT, borderRadius: 6, padding: '3px 10px',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#fff', fontWeight: 500,
+              }}>01</div>
+              {/* Hover detail overlay */}
+              {hoveredRec === top.movie_id && recDetails[top.movie_id] && (
                 <div style={{
-                  fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-                  fontSize: 28, textTransform: 'uppercase', color: DARK,
-                  lineHeight: 0.95, letterSpacing: '-0.01em', marginBottom: 8,
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.75) 100%)',
+                  display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                  padding: '24px 20px', gap: 12,
                 }}>
-                  {rec.title}
+                  <Eyebrow color={ACCENT}>Top pick</Eyebrow>
+                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(18px, 2vw, 28px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em' }}>{top.title}</div>
+                  <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {recDetails[top.movie_id].overview}
+                  </p>
+                  {recDetails[top.movie_id].cast.length > 0 && (
+                    <div>
+                      <Eyebrow color={'rgba(255,255,255,0.3)'}>Cast</Eyebrow>
+                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
+                        {recDetails[top.movie_id].cast.join(' · ')}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                {/* Genre swatches bottom-right */}
-                <div style={{ display: 'flex', gap: 3, marginTop: 8 }}>
-                  {genres.slice(0, 2).map(g => {
-                    const [l] = GENRE_GRADIENT[g] ?? ['#E0D9D0', '#C0B9B0']
-                    return <div key={g} style={{ width: 10, height: 14, borderRadius: 2, background: l }} />
-                  })}
+              )}
+              {/* Default bottom overlay (no hover) */}
+              {hoveredRec !== top.movie_id && (
+                <div style={{
+                  position: 'absolute', bottom: 0, left: 0, right: 0,
+                  padding: '80px 20px 22px',
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 50%, transparent 100%)',
+                }}>
+                  <Eyebrow color={ACCENT}>Top pick</Eyebrow>
+                  <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(20px, 2.4vw, 34px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.0, letterSpacing: '-0.01em', marginTop: 6, marginBottom: 8 }}>{top.title}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {genres.slice(0, 3).map(g => (
+                      <span key={g} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{g}</span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )
-        })}
+        })()}
+
+        {/* RIGHT — 3×3 grid for ranks 2–10 */}
+        <div style={{
+          flex: 1, display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateRows: 'repeat(3, 1fr)',
+          gap: 10, minWidth: 0,
+        }}>
+          {rest.slice(0, 9).map((rec) => {
+            const genres   = rec.genres.split('|')
+            const poster   = recPosters[rec.movie_id]
+            const details  = recDetails[rec.movie_id]
+            const isHover  = hoveredRec === rec.movie_id
+            return (
+              <div
+                key={rec.rank}
+                onMouseEnter={() => setHoveredRec(rec.movie_id)}
+                onMouseLeave={() => setHoveredRec(null)}
+                style={{
+                  position: 'relative', borderRadius: 10, overflow: 'hidden',
+                  background: poster ? '#111' : undefined,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                  ...(poster ? {} : posterStyle(genres)),
+                }}>
+                {poster && <img src={poster} alt={rec.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.35s ease', transform: isHover ? 'scale(1.05)' : 'scale(1)' }} />}
+                {/* Rank badge */}
+                <div style={{
+                  position: 'absolute', top: 8, left: 8, zIndex: 2,
+                  background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+                  borderRadius: 5, padding: '2px 7px',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#fff',
+                }}>{String(rec.rank).padStart(2, '0')}</div>
+
+                {/* Hover overlay — description + cast */}
+                {isHover && details ? (
+                  <div style={{
+                    position: 'absolute', inset: 0, zIndex: 1,
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.8) 100%)',
+                    display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                    padding: '10px 12px 12px', gap: 6,
+                  }}>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(10px, 1vw, 14px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em' }}>{rec.title}</div>
+                    <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {details.overview}
+                    </p>
+                    {details.cast.length > 0 && (
+                      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                        {details.cast.join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  /* Default bottom overlay */
+                  <div style={{
+                    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1,
+                    padding: '28px 10px 10px',
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)',
+                  }}>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(11px, 1.1vw, 16px)', textTransform: 'uppercase', color: '#fff', lineHeight: 1.1, letterSpacing: '-0.01em', marginBottom: 3 }}>{rec.title}</div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{genres[0]}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Footer */}
       <div style={{
-        height: 36, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 56px', borderTop: `1px solid ${BORDER}`,
+        height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 20px', borderTop: `1px solid #1A1612`,
       }}>
-        <Eyebrow color={FAINT}>Spark ALS · rank=20 · regParam=0.1 · matched viewer #{matchedUser}</Eyebrow>
+        <Eyebrow color={'#2E2924'}>Spark ALS · rank=20 · regParam=0.1 · matched viewer #{matchedUser}</Eyebrow>
         <a href="https://grouplens.org/datasets/movielens/" target="_blank" rel="noreferrer"
-           style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT, textDecoration: 'none' }}>
+           style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#2E2924', textDecoration: 'none' }}>
           grouplens.org ↗
         </a>
       </div>

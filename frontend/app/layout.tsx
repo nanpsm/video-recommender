@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'MovieMatch',
-  description: 'Personalised film recommendations powered by Apache Spark ALS',
+  title: 'FilmTwin',
+  description: 'Find your film twin — personalised recommendations powered by Apache Spark ALS',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
