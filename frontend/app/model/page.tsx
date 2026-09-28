@@ -7,10 +7,11 @@ const ACCENT  = '#C2410C'
 const DARK    = '#1A1814'
 const CREAM   = '#FAF7F1'
 const BORDER  = '#E6E0D5'
-const MUTED   = '#8A8278'
+const MUTED     = '#8A8278'
+const NEGATIVE  = '#EF4444'
 const FAINT   = '#B9B1A3'
 
-// Evaluation results from: uv run python -m video_recommender.evaluate
+// uv run python -m video_recommender.evaluate
 // MovieLens ml-latest-small · 80/20 split · K=10 · liked_threshold=4.0
 const BASELINES = [
   { name: 'Random',           precision: 0.0019, recall: 0.0023, ndcg: 0.0028, hitRate: 0.0186, n: 592, note: 'Chance baseline' },
@@ -19,6 +20,44 @@ const BASELINES = [
   { name: 'ALS only',         precision: 0.0225, recall: 0.0182, ndcg: 0.0207, hitRate: 0.1824, n: 592, note: 'Collaborative filtering' },
   { name: 'Hybrid',           precision: 0.0216, recall: 0.0160, ndcg: 0.0237, hitRate: 0.1639, n: 592, note: 'ALS × 0.6 + genre × 0.4 · deployed', bestNdcg: true },
 ]
+
+// uv run python -m video_recommender.cold_start
+// Simulates each user having only K liked ratings; evaluates hybrid recs on held-out 20%
+const COLD_START = [
+  { k: 5,  ndcg: 0.0193, precision: 0.0157, recall: 0.0101, hitRate: 0.1274, stability: 0.0457, n: 581 },
+  { k: 8,  ndcg: 0.0183, precision: 0.0168, recall: 0.0133, hitRate: 0.1319, stability: 0.0810, n: 561 },
+  { k: 12, ndcg: 0.0183, precision: 0.0183, recall: 0.0133, hitRate: 0.1467, stability: 0.1133, n: 525 },
+  { k: 16, ndcg: 0.0211, precision: 0.0209, recall: 0.0148, hitRate: 0.1609, stability: 0.1094, n: 460 },
+  { k: 20, ndcg: 0.0234, precision: 0.0238, recall: 0.0138, hitRate: 0.1584, stability: 0.1473, n: 404 },
+  { k: 30, ndcg: 0.0234, precision: 0.0245, recall: 0.0114, hitRate: 0.1903, stability: 0.1989, n: 310 },
+]
+
+// uv run python -m video_recommender.bias_audit
+const BIAS = {
+  totalMovies: 9742,
+  uniqueRecommended: 687,
+  coverage: 0.071,
+  avgPopAll: 22.0,
+  avgPopRec: 22.0,
+  medianPopRec: 11,
+  popularityRatio: 1.00,
+  headThreshold: 31,
+  longTailShare: 0.818,
+  novelty: 12.32,
+  diversity: 0.2991,
+  top10: [
+    { title: 'Five Easy Pieces (1970)',                      recs: 260, ratings: 7  },
+    { title: 'Guess Who\'s Coming to Dinner (1967)',         recs: 233, ratings: 9  },
+    { title: 'The Celebration (Festen) (1998)',              recs: 161, ratings: 12 },
+    { title: 'Yojimbo (1961)',                               recs: 147, ratings: 10 },
+    { title: 'Secrets & Lies (1996)',                        recs: 143, ratings: 10 },
+    { title: 'A Man for All Seasons (1966)',                 recs: 136, ratings: 5  },
+    { title: 'A Streetcar Named Desire (1951)',              recs: 129, ratings: 17 },
+    { title: 'Three Billboards Outside Ebbing (2017)',       recs: 115, ratings: 6  },
+    { title: 'The Hustler (1961)',                           recs: 114, ratings: 12 },
+    { title: 'Dallas Buyers Club (2013)',                    recs: 102, ratings: 13 },
+  ],
+}
 
 const METRICS = [
   { key: 'precision' as const, label: 'Precision@10', desc: 'Fraction of top-10 recs the user actually liked' },
@@ -65,7 +104,7 @@ function Bar({ value, max, color }: { value: number; max: number; color: string 
 }
 
 export default function ModelPage() {
-  const [activeMetric, setActiveMetric] = useState<typeof METRICS[number]['key']>('ndcg')
+  const [activeMetric, setActiveMetric] = useState<typeof METRICS[number]['key']>('ndcg')  // NDCG is primary
   const meta = METRICS.find(m => m.key === activeMetric)!
   const maxVal = Math.max(...BASELINES.map(b => b[activeMetric]))
 
@@ -105,33 +144,33 @@ export default function ModelPage() {
           </div>
         </div>
 
-        {/* Metric selector */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 32, flexWrap: 'wrap' }}>
-          {METRICS.map(m => (
-            <button
-              key={m.key}
-              onClick={() => setActiveMetric(m.key)}
-              style={{
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase',
-                padding: '7px 16px', borderRadius: 8, border: `1px solid ${activeMetric === m.key ? ACCENT : BORDER}`,
-                background: activeMetric === m.key ? ACCENT : '#fff',
-                color: activeMetric === m.key ? '#fff' : MUTED,
-                cursor: 'pointer', transition: 'all 0.15s',
-              }}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Metric description */}
-        <div style={{ marginBottom: 24, padding: '12px 16px', background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10 }}>
-          <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>{meta.desc}</span>
-        </div>
-
         {/* Bar chart comparison */}
         <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 16, overflow: 'hidden', marginBottom: 40 }}>
           <div style={{ height: 3, background: ACCENT }} />
+          {/* Metric selector inside the card header */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderBottom: `1px solid ${BORDER}`, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: FAINT, letterSpacing: '0.12em', textTransform: 'uppercase', flexShrink: 0 }}>Sort by</span>
+            <div style={{ display: 'flex', gap: 0, background: CREAM, border: `1px solid ${BORDER}`, borderRadius: 6, overflow: 'hidden' }}>
+              {METRICS.map((m, i) => (
+                <button
+                  key={m.key}
+                  onClick={() => setActiveMetric(m.key)}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    padding: '5px 12px',
+                    border: 'none',
+                    borderLeft: i > 0 ? `1px solid ${BORDER}` : 'none',
+                    background: activeMetric === m.key ? DARK : 'transparent',
+                    color: activeMetric === m.key ? '#fff' : MUTED,
+                    cursor: 'pointer', transition: 'all 0.12s',
+                  }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT }}>{meta.desc}</span>
+          </div>
           {BASELINES.map((b, i) => (
             <div
               key={b.name}
@@ -146,7 +185,7 @@ export default function ModelPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: (b.bestNdcg || b.bestPrecision) ? ACCENT : DARK }}>{b.name}</span>
                   {b.bestNdcg && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', border: `1px solid rgba(194,65,12,0.2)`, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best NDCG</span>}
-                  {b.bestPrecision && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', border: `1px solid rgba(194,65,12,0.2)`, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best recall</span>}
+                  {b.bestPrecision && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', border: `1px solid rgba(194,65,12,0.2)`, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best precision</span>}
                 </div>
                 <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: FAINT, marginTop: 2 }}>{b.note}</div>
               </div>
@@ -177,7 +216,7 @@ export default function ModelPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: (b.bestNdcg || b.bestPrecision) ? ACCENT : DARK }}>{b.name}</span>
                         {b.bestNdcg && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best NDCG</span>}
-                        {b.bestPrecision && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best recall</span>}
+                        {b.bestPrecision && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Best precision</span>}
                       </div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: FAINT, marginTop: 2 }}>{b.note}</div>
                     </td>
@@ -217,6 +256,133 @@ export default function ModelPage() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Cold-start experiment */}
+        <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 8 }}>Cold-Start Experiment</div>
+        <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED, marginBottom: 8, lineHeight: 1.65 }}>
+          How many ratings does FilmTwin actually need? For each K, every user's liked films were sampled down to K, genre vectors rebuilt, and hybrid recs generated against the held-out 20%.
+        </p>
+        <div style={{ background: 'rgba(194,65,12,0.06)', border: `1px solid rgba(194,65,12,0.18)`, borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
+          <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
+            <strong style={{ color: DARK }}>Key finding:</strong> NDCG plateaus at K≈20 (0.0234) and doesn't improve with 30 ratings. K=5 outperforms K=8–12 on NDCG due to sample selection — at K=5 more users qualify (N=581 vs 525), skewing toward users with richer rating histories. <strong style={{ color: DARK }}>Twin stability is low across all K</strong> — even at K=30 only 20% of twins remain stable across random rating perturbations, suggesting the "Film Twin" claim should be communicated with some uncertainty.
+          </p>
+        </div>
+        <div style={{ overflowX: 'auto', marginBottom: 48 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 12, overflow: 'hidden' }}>
+            <thead>
+              <tr style={{ background: CREAM }}>
+                {['K ratings', 'NDCG@10', 'Precision@10', 'Recall@10', 'Hit Rate@10', 'Stability', 'N'].map((h, i) => (
+                  <th key={h} style={{ padding: '12px 16px', textAlign: i === 0 ? 'left' : 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500, borderBottom: `1px solid ${BORDER}` }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {COLD_START.map((row, i) => {
+                const isDeployed = row.k === 12
+                const isNdcgBest = row.ndcg === Math.max(...COLD_START.map(r => r.ndcg))
+                return (
+                  <tr key={row.k} style={{ background: isDeployed ? 'rgba(194,65,12,0.03)' : 'transparent', borderBottom: i < COLD_START.length - 1 ? `1px solid ${BORDER}` : 'none' }}>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 18, color: isDeployed ? ACCENT : DARK }}>{row.k}</span>
+                        {isDeployed && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: ACCENT, background: 'rgba(194,65,12,0.1)', border: `1px solid rgba(194,65,12,0.2)`, borderRadius: 4, padding: '1px 6px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>deployed</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: isNdcgBest ? ACCENT : DARK, fontWeight: isNdcgBest ? 700 : 400 }}>{row.ndcg.toFixed(4)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: DARK }}>{row.precision.toFixed(4)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: DARK }}>{row.recall.toFixed(4)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: DARK }}>{row.hitRate.toFixed(4)}</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: row.stability < 0.15 ? NEGATIVE : MUTED }}>{(row.stability * 100).toFixed(1)}%</td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: MUTED }}>{row.n}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Popularity bias audit */}
+        <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 8 }}>Popularity Bias Audit</div>
+        <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED, marginBottom: 16, lineHeight: 1.65 }}>
+          Measures catalog coverage, popularity distribution, novelty, and intra-list diversity across all 610 users&apos; hybrid recommendations.
+        </p>
+
+        {/* Key stats grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+          {[
+            { label: 'Catalog coverage', value: '7.1%', sub: `${BIAS.uniqueRecommended} of ${BIAS.totalMovies.toLocaleString()} films`, warn: true },
+            { label: 'Popularity ratio', value: '1.00×', sub: 'Recs vs. all-film avg', good: true },
+            { label: 'Long-tail share', value: '81.8%', sub: 'Recs below popularity head', good: true },
+            { label: 'Novelty', value: '12.32 bits', sub: 'Avg self-information' },
+            { label: 'Intra-list diversity', value: '0.2991', sub: 'Avg pairwise genre distance' },
+            { label: 'Median rec popularity', value: '11', sub: 'Ratings per recommended film' },
+          ].map(s => (
+            <div key={s.label} style={{ background: '#fff', border: `1px solid ${s.warn ? 'rgba(239,68,68,0.2)' : s.good ? 'rgba(22,163,74,0.2)' : BORDER}`, borderRadius: 12, padding: '16px' }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: MUTED, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>{s.label}</div>
+              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 28, color: s.warn ? NEGATIVE : s.good ? '#16A34A' : DARK, lineHeight: 1 }}>{s.value}</div>
+              <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: FAINT, marginTop: 4 }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: 'rgba(239,68,68,0.05)', border: `1px solid rgba(239,68,68,0.15)`, borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
+          <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
+            <strong style={{ color: DARK }}>Anti-popularity finding:</strong> The model recommends only 7.1% of the catalog (687 films). Despite a neutral popularity ratio (1.00×), the top recommended film — <em>Five Easy Pieces</em> — has only 7 ratings but gets recommended to 260 of 610 users. The model concentrates on niche films highly rated by a small number of users whose taste profiles match many visitors. This is a coverage problem, not a mainstream popularity bias.
+          </p>
+        </div>
+
+        {/* Top recommended films */}
+        <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden', marginBottom: 48 }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: DARK }}>Top 10 most recommended films</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED }}>across 610 users</span>
+          </div>
+          {BIAS.top10.map((film, i) => (
+            <div key={film.title} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 80px 80px', gap: 16, padding: '12px 20px', borderBottom: i < BIAS.top10.length - 1 ? `1px solid ${BORDER}` : 'none', alignItems: 'center' }}>
+              <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 16, color: FAINT }}>{i + 1}</span>
+              <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: DARK, fontWeight: 600 }}>{film.title}</span>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: ACCENT }}>{film.recs}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: FAINT }}>users</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: film.ratings < 15 ? NEGATIVE : DARK }}>{film.ratings}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: FAINT }}>ratings</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* A/B test */}
+        <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 8 }}>A/B Test</div>
+        <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED, marginBottom: 16, lineHeight: 1.65 }}>
+          Each visitor is randomly assigned to either the <strong style={{ color: DARK }}>Hybrid</strong> (ALS + genre, 50%) or <strong style={{ color: DARK }}>ALS-only</strong> (50%) variant. Thumbs-up/down feedback is stored in Supabase alongside the variant label. Results will appear below as real users interact with the app.
+        </p>
+        <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden', marginBottom: 48 }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: DARK }}>Variant assignment</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED }}>50 / 50 random split</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+            {[
+              { label: 'Hybrid', desc: 'ALS × 0.6 + genre × 0.4', color: ACCENT, bg: 'rgba(194,65,12,0.04)' },
+              { label: 'ALS only', desc: 'Collaborative filtering only', color: MUTED, bg: 'transparent' },
+            ].map((v, i) => (
+              <div key={v.label} style={{ padding: '20px 24px', background: v.bg, borderLeft: i > 0 ? `1px solid ${BORDER}` : 'none' }}>
+                <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: v.color, textTransform: 'uppercase', marginBottom: 4 }}>{v.label}</div>
+                <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginBottom: 12 }}>{v.desc}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: FAINT, background: CREAM, border: `1px solid ${BORDER}`, borderRadius: 6, padding: '6px 12px', display: 'inline-block' }}>
+                  Results pending — no feedback yet
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '12px 20px', borderTop: `1px solid ${BORDER}`, background: CREAM }}>
+            <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT, lineHeight: 1.6 }}>
+              Primary metric: thumbs-up rate. Secondary: does the user restart and rate more films? Stored in <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>feedback.variant</code> on Supabase.
+            </p>
+          </div>
         </div>
 
         {/* Footer note */}

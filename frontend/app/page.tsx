@@ -249,6 +249,8 @@ export default function Home() {
   const [feedbackStats, setFeedbackStats] = useState<{ up: number; total: number } | null>(null)
   const [blendScores, setBlendScores]     = useState<Record<number, number>>({})
   const [neighbors, setNeighbors]         = useState<Array<{ uid: number; sim: number }>>([])
+  const [allUVecs, setAllUVecs]           = useState<Record<number, Record<string, number>>>({})
+  const [showCounterfactual, setShowCounterfactual] = useState(false)
   // A/B test: randomly assign 'hybrid' (neighbourhood blend, current) vs 'als' (single twin, control)
   const [variant] = useState<'hybrid' | 'als'>(() => Math.random() < 0.5 ? 'hybrid' : 'als')
   const cardStackRef = useRef<SwipeableCardStackHandle>(null)
@@ -354,6 +356,7 @@ export default function Home() {
     }
 
     setNeighbors(ranked)
+    setAllUVecs(uVecs)
     const best = ranked[0].uid  // film twin shown in the UI
 
     // Improvement #1: IDs of films already shown in onboarding — exclude from recommendations
@@ -474,7 +477,7 @@ export default function Home() {
 
   function restart() {
     setStep('rate'); setIndex(0); setVotes({}); setRecs([]); setUserVec({}); setMatchedUser(null); setError('')
-    setBlendScores({}); setNeighbors([])
+    setBlendScores({}); setNeighbors([]); setAllUVecs({}); setShowCounterfactual(false)
   }
 
   // ── MODALS ────────────────────────────────────────────────────────────────
@@ -659,6 +662,11 @@ export default function Home() {
                 <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT, marginTop: 16, lineHeight: 1.6 }}>
                   Recommendations are blended from top-{neighbors.length} neighbours, weighted by their similarity to you.
                 </p>
+                <div style={{ marginTop: 12, padding: '10px 12px', background: 'rgba(194,65,12,0.05)', border: `1px solid rgba(194,65,12,0.15)`, borderRadius: 8 }}>
+                  <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 11, color: MUTED, lineHeight: 1.55 }}>
+                    <strong style={{ color: DARK }}>Stability note:</strong> Genre-based matching is sensitive to small taste differences — swapping one rated film shifts the twin in most cases. Your twin is the closest match given the films you chose, but consider it approximate.
+                  </p>
+                </div>
               </div>
             )
           })() : (modal === 'how' || modal === 'match') ? (
@@ -1147,21 +1155,33 @@ export default function Home() {
   // ── LOADING ───────────────────────────────────────────────────────────────
   if (step === 'loading') return (
     <div style={{
-      height: '100vh', background: CREAM,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20,
+      height: '100vh', background: '#0E0C0A',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 32,
     }}>
-      <div style={{
-        width: 48, height: 48, borderRadius: '50%',
-        border: `3px solid ${BORDER}`, borderTopColor: ACCENT,
-        animation: 'spin 0.8s linear infinite',
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } } .no-scrollbar::-webkit-scrollbar { display: none }`}</style>
-      <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 16, color: MUTED }}>
-        Finding your match…
-      </p>
-      <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT, letterSpacing: '0.1em' }}>
-        COMPUTING COSINE SIMILARITY ACROSS 610 PROFILES
-      </p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } } @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} } .no-scrollbar::-webkit-scrollbar { display: none }`}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: '50%',
+          border: `2px solid rgba(255,255,255,0.08)`, borderTopColor: ACCENT,
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <p style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: '#fff', textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
+          Finding your twin…
+        </p>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 280 }}>
+        {[
+          'Fetching 610 viewer profiles',
+          'Computing cosine similarity',
+          'Blending top-5 neighbours',
+          'Ranking recommendations',
+        ].map((label, i) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#4A443E', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 
@@ -1446,6 +1466,77 @@ export default function Home() {
               ))}
             </div>
             <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 600, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>Genres in your recs you didn't rate — your twin loved them.</span>
+          </div>
+        )
+      })()}
+
+      {/* Counterfactual: "What would change your twin?" */}
+      {Object.keys(allUVecs).length > 0 && (() => {
+        // For each liked film, flip it to a skip and recompute who would be the twin
+        const counterfactuals: Array<{ film: typeof FILMS[number]; newTwin: number; newSim: number; deltaSim: number }> = []
+        const currentSim = neighbors[0]?.sim ?? 0
+
+        for (const filmIdx of likedIndices.slice(0, 6)) {
+          const film = FILMS[filmIdx]
+          // Rebuild vote weights without this film
+          const w2: Record<string, number> = {}
+          for (const i of likedIndices) {
+            if (i === filmIdx) continue
+            for (const g of FILMS[i].genres) w2[g] = (w2[g] ?? 0) + 1
+          }
+          for (const i of Object.entries(votes).filter(([, v]) => v === 'dislike').map(([i]) => parseInt(i)))
+            for (const g of FILMS[i].genres) w2[g] = (w2[g] ?? 0) - 0.5
+          const mag2 = Math.sqrt(Object.values(w2).reduce((s, v) => s + v * v, 0))
+          if (mag2 === 0) continue
+          const vVec2: Record<string, number> = {}
+          for (const [g, s] of Object.entries(w2)) vVec2[g] = s / mag2
+
+          // Find new top twin
+          let bestSim = -1, bestUid = -1
+          for (const [uid, vec] of Object.entries(allUVecs)) {
+            const sim = cosineSim(vec, vVec2)
+            if (sim > bestSim) { bestSim = sim; bestUid = parseInt(uid) }
+          }
+          if (bestUid !== neighbors[0]?.uid) {
+            counterfactuals.push({ film, newTwin: bestUid, newSim: bestSim, deltaSim: bestSim - currentSim })
+          }
+        }
+
+        if (counterfactuals.length === 0) return null
+
+        return (
+          <div style={{ borderTop: '1px solid #1A1612', background: '#0E0C0A' }}>
+            <button
+              onClick={() => setShowCounterfactual(v => !v)}
+              style={{ width: '100%', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>What would change your twin?</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', background: 'rgba(255,255,255,0.04)', border: '1px solid #2A2520', borderRadius: 4, padding: '2px 8px' }}>{counterfactuals.length} scenarios</span>
+              </div>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#3A3530' }}>{showCounterfactual ? '▲' : '▼'}</span>
+            </button>
+            {showCounterfactual && (
+              <div style={{ padding: '0 20px 20px' }}>
+                <p style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12 }}>
+                  Genre matching only · does not include ALS scores
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {counterfactuals.slice(0, 4).map(({ film, newTwin, newSim }) => (
+                  <div key={film.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #1E1A16', borderRadius: 10, padding: '14px 16px', minWidth: 200, flex: '1 1 200px' }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>If you'd skipped</div>
+                    <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 15, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 10, lineHeight: 1.1 }}>{film.title}</div>
+                    <div style={{ height: 1, background: '#1E1A16', marginBottom: 10 }} />
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#3A3530', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4 }}>New twin</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 26, color: ACCENT, lineHeight: 1 }}>#{newTwin}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#4A443E' }}>{Math.round(newSim * 100)}% match</span>
+                    </div>
+                  </div>
+                ))}
+                </div>
+              </div>
+            )}
           </div>
         )
       })()}
