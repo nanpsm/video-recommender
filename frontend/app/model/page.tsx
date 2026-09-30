@@ -355,37 +355,6 @@ export default function ModelPage() {
           ))}
         </div>
 
-        {/* A/B test */}
-        <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 8 }}>A/B Test</div>
-        <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED, marginBottom: 16, lineHeight: 1.65 }}>
-          Each visitor is randomly assigned to either the <strong style={{ color: DARK }}>Hybrid</strong> (ALS + genre, 50%) or <strong style={{ color: DARK }}>ALS-only</strong> (50%) variant. Thumbs-up/down feedback is stored in Supabase alongside the variant label. Results will appear below as real users interact with the app.
-        </p>
-        <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden', marginBottom: 48 }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: DARK }}>Variant assignment</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED }}>50 / 50 random split</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-            {[
-              { label: 'Hybrid', desc: 'ALS × 0.6 + genre × 0.4', color: ACCENT, bg: 'rgba(194,65,12,0.04)' },
-              { label: 'ALS only', desc: 'Collaborative filtering only', color: MUTED, bg: 'transparent' },
-            ].map((v, i) => (
-              <div key={v.label} style={{ padding: '20px 24px', background: v.bg, borderLeft: i > 0 ? `1px solid ${BORDER}` : 'none' }}>
-                <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: v.color, textTransform: 'uppercase', marginBottom: 4 }}>{v.label}</div>
-                <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginBottom: 12 }}>{v.desc}</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: FAINT, background: CREAM, border: `1px solid ${BORDER}`, borderRadius: 6, padding: '6px 12px', display: 'inline-block' }}>
-                  Results pending — no feedback yet
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: '12px 20px', borderTop: `1px solid ${BORDER}`, background: CREAM }}>
-            <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 12, color: FAINT, lineHeight: 1.6 }}>
-              Primary metric: thumbs-up rate. Secondary: does the user restart and rate more films? Stored in <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>feedback.variant</code> on Supabase.
-            </p>
-          </div>
-        </div>
-
         {/* Footer note */}
         <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT }}>Liked threshold: rating ≥ 4.0 · K=10 · seed=42 · baseline evaluated on 592 users (ml-latest-small) · model trained on 32,813 users (ml-latest 10%)</span>

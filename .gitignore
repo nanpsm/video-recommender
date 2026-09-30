@@ -19,3 +19,4 @@ models/streaming_checkpoint/
 # Environment variables (secrets — never commit)
 .env
 .env.*
+.spark-tmp/

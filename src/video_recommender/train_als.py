@@ -27,10 +27,16 @@ SAVE_MODEL = True    # save the trained model to disk after training
 MODEL_DIR = "models/als"          # Spark saves a folder, not a single file
 POPULARITY_DIR = "models/popularity"  # also save popularity stats for the API
 
-# Small grid to keep runtime and memory modest on a laptop.
-# rank     = number of latent "taste" factors per user and movie
-# regParam = L2 penalty on factor sizes; higher = less overfitting
-PARAM_GRID = [(rank, reg) for rank in (10, 20) for reg in (0.05, 0.1, 0.2)]
+# Sample 10% of users to keep runtime under ~5 min on a laptop.
+# ALS quality degrades gracefully with sampling; 330k→33k users still gives
+# ~3M ratings which is plenty for good latent factors.
+SAMPLE_FRACTION = 0.10
+
+# Skip grid search — rank=10, regParam=0.05 won on ml-latest-small and is a
+# good default. Set to True to re-enable the 6-run grid search.
+SKIP_TUNING = True
+BEST_RANK = 10
+BEST_REG = 0.05
 
 
 def build_als(rank: int, reg_param: float) -> ALS:
@@ -145,6 +151,13 @@ def main():
     ratings, movies = load_data(spark)
     ratings = ratings.drop("timestamp")
 
+    # Sample a fraction of users so shuffle data fits in memory on a laptop.
+    if SAMPLE_FRACTION < 1.0:
+        sampled_users = (ratings.select("userId").distinct()
+                         .sample(fraction=SAMPLE_FRACTION, seed=SEED))
+        ratings = ratings.join(sampled_users, "userId")
+        print(f"Sampled {SAMPLE_FRACTION:.0%} of users")
+
     train, test = ratings.randomSplit([0.8, 0.2], seed=SEED)
 
     # Drop cold items (movies with very few training ratings).
@@ -164,7 +177,11 @@ def main():
     print(f"Train: {train.count():,} ratings  Test: {test.count():,} ratings\n")
 
     # ---- ALS ----
-    rank, reg = tune_als(train)
+    if SKIP_TUNING:
+        rank, reg = BEST_RANK, BEST_REG
+        print(f"Skipping tuning — using rank={rank}, regParam={reg}")
+    else:
+        rank, reg = tune_als(train)
     model = build_als(rank, reg).fit(train)
     als_rmse = rmse(model.transform(test))
 
@@ -202,7 +219,7 @@ def main():
         #   itemFactors/ — the movie latent factor matrix (Parquet)
         #   userFactors/ — the user latent factor matrix (Parquet)
         # To load it later: ALSModel.load(MODEL_DIR)
-        model.save(MODEL_DIR)
+        model.write().overwrite().save(MODEL_DIR)
         print(f"\nALS model saved to {MODEL_DIR}/")
 
         # Save movie popularity stats (used by the baseline in the API).

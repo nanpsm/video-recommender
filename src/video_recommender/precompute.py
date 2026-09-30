@@ -1,34 +1,24 @@
 """Precompute top-K recommendations for all users and store them in Supabase.
 
-Uses a hybrid scoring model: normalised ALS predicted rating + genre-match
-score. This combines collaborative filtering (what similar users liked) with
-content-based filtering (whether the film's genres match the user's taste).
+Uses the saved ALS factor matrices (Parquet) + numpy — no Spark needed at runtime.
 
 Scoring:
   hybrid = ALS_WEIGHT * als_norm + GENRE_WEIGHT * genre_score
-
-  als_norm:    ALS predicted rating normalised to [0,1] per user
-  genre_score: average user_genre_vec[g] for each genre g in the film
 
 Run:  uv run python -m video_recommender.precompute
 """
 import os
 from collections import defaultdict
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from pyspark.ml.recommendation import ALSModel
-from pyspark.sql import functions as F
 from supabase import create_client
 
-from video_recommender.explore import get_spark, load_data
-from video_recommender.train_als import LIKED_THRESHOLD, MIN_MOVIE_RATINGS, SEED
-
-# Supabase connection.
 # SUPABASE_SERVICE_KEY must be set as an environment variable — never commit it.
 # The anon key is safe to hardcode (public read-only access).
 # The service key bypasses RLS and is used only for writes in this script.
 SUPABASE_URL = "https://spmtgrmedfilavekoije.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwbXRncm1lZGZpbGF2ZWtvaWplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3OTQxNjEsImV4cCI6MjA5NzM3MDE2MX0.Xof9SJonn7J7ok-Fqec4U0bHWGsprKsX2Mhn0PxIJAQ"
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 if not SUPABASE_SERVICE_KEY:
     raise EnvironmentError(
@@ -36,22 +26,31 @@ if not SUPABASE_SERVICE_KEY:
         "  export SUPABASE_SERVICE_KEY='your-service-role-key'"
     )
 
-MODEL_DIR = "models/als"
-K = 10
-BATCH_SIZE = 500
+MODEL_DIR    = Path("models/als")
+DATA_DIR     = Path("data/ml-latest")
+K            = 10
+BATCH_SIZE   = 500
+LIKED_THRESHOLD = 4.0
+MIN_MOVIE_RATINGS = 5
+SEED         = 42
 
-# Hybrid weights (must sum to 1.0 for scores to stay in [0,1])
 ALS_WEIGHT   = 0.6
 GENRE_WEIGHT = 0.4
 
 
-def _build_genre_vecs(ratings_pd: pd.DataFrame, movie_genres: dict) -> dict:
-    """Unit-normalised genre preference vector for each user from liked films."""
-    liked = ratings_pd[ratings_pd.rating >= LIKED_THRESHOLD]
+def load_factors(model_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Load user and item latent factor matrices from Parquet."""
+    user_df = pd.read_parquet(model_dir / "userFactors")  # id, features
+    item_df = pd.read_parquet(model_dir / "itemFactors")  # id, features
+    return user_df, item_df
+
+
+def build_genre_vecs(liked: pd.DataFrame, movie_genres: dict) -> dict:
+    """Unit-normalised genre preference vector per user."""
     vecs: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for row in liked.itertuples():
         for g in movie_genres.get(row.movieId, []):
-            vecs[row.userId][g] += row.rating
+            vecs[row.userId][g] += float(row.rating)
     for uid, vec in vecs.items():
         mag = sum(v * v for v in vec.values()) ** 0.5
         if mag > 0:
@@ -61,88 +60,103 @@ def _build_genre_vecs(ratings_pd: pd.DataFrame, movie_genres: dict) -> dict:
 
 
 def main():
-    spark = get_spark("precompute")
-    spark.sparkContext.setLogLevel("WARN")
+    # ── Load factor matrices ──────────────────────────────────────────────────
+    print("Loading ALS factor matrices...")
+    user_df, item_df = load_factors(MODEL_DIR)
+    # numpy arrays for fast dot product
+    user_ids  = user_df["id"].to_numpy()
+    user_mat  = np.stack(user_df["features"].to_numpy())   # (U, rank)
+    item_ids  = item_df["id"].to_numpy()
+    item_mat  = np.stack(item_df["features"].to_numpy())   # (I, rank)
+    print(f"  Users: {len(user_ids):,}  Items: {len(item_ids):,}  Rank: {user_mat.shape[1]}")
 
-    print(f"Loading ALS model from {MODEL_DIR}...")
-    model = ALSModel.load(MODEL_DIR)
+    # ── Load ratings + movies ─────────────────────────────────────────────────
+    print("Loading ratings and movies...")
+    ratings = pd.read_csv(DATA_DIR / "ratings.csv",
+                          usecols=["userId", "movieId", "rating"],
+                          dtype={"userId": "int32", "movieId": "int32", "rating": "float32"})
+    movies  = pd.read_csv(DATA_DIR / "movies.csv",
+                          dtype={"movieId": "int32"})
 
-    ratings_raw, movies = load_data(spark)
-    ratings = ratings_raw.drop("timestamp")
-    train_spark, _ = ratings.randomSplit([0.8, 0.2], seed=SEED)
+    # Same 80/20 split used in training (fixed seed → identical split)
+    rng   = np.random.default_rng(SEED)
+    mask  = rng.random(len(ratings)) < 0.8
+    train = ratings[mask].copy()
 
-    # Same cold-movie filter used during training
-    movie_counts = train_spark.groupBy("movieId").agg(F.count("*").alias("count"))
-    warm = movie_counts.filter(F.col("count") >= MIN_MOVIE_RATINGS).select("movieId")
-    train_spark = train_spark.join(warm, "movieId")
+    # Same cold-movie filter
+    counts     = train.groupby("movieId")["movieId"].transform("count")
+    warm_mask  = counts >= MIN_MOVIE_RATINGS
+    train      = train[warm_mask]
+    warm_items = set(train["movieId"].unique())
 
-    # Score every (user, movie) pair — ALS handles the cartesian product in Spark
-    print("Scoring all user-movie pairs with ALS...")
-    users_df  = train_spark.select("userId").distinct()
-    movies_df = train_spark.select("movieId").distinct()
-    all_pairs = users_df.crossJoin(movies_df)
-    als_preds = (model.transform(all_pairs)
-                 .filter(F.col("prediction").isNotNull()))
-
-    # Collect to pandas — ~5.9M rows; takes ~30s but keeps the hybrid logic clean
-    print("Collecting ALS predictions to pandas (this takes ~30s)...")
-    als_pd     = als_preds.toPandas()
-    train_pd   = train_spark.toPandas()
-    movies_pd  = movies.toPandas()
-    print(f"ALS scored {len(als_pd):,} pairs across {als_pd.userId.nunique()} users")
-
-    # Build lookup structures
+    # ── Build lookup structures ───────────────────────────────────────────────
     movie_genres = {
         r.movieId: r.genres.split("|")
-        for r in movies_pd.itertuples()
+        for r in movies.itertuples()
         if r.genres != "(no genres listed)"
     }
-    movie_meta = {r.movieId: (r.title, r.genres) for r in movies_pd.itertuples()}
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
+    movie_meta = {r.movieId: (r.title, r.genres) for r in movies.itertuples()}
+    seen_by_user = train.groupby("userId")["movieId"].apply(set).to_dict()
 
-    # Genre preference vectors
-    user_vecs = _build_genre_vecs(train_pd, movie_genres)
+    liked = train[train["rating"] >= LIKED_THRESHOLD]
+    user_vecs = build_genre_vecs(liked, movie_genres)
 
-    # Per-user normalise ALS scores to [0, 1]
-    stats  = als_pd.groupby("userId")["prediction"].agg(["min", "max"]).reset_index()
-    als_pd = als_pd.merge(stats, on="userId")
-    als_pd["als_norm"] = (
-        (als_pd["prediction"] - als_pd["min"])
-        / (als_pd["max"] - als_pd["min"] + 1e-9)
-    )
+    # ── Filter item matrix to warm items only ─────────────────────────────────
+    warm_mask_items = np.isin(item_ids, list(warm_items))
+    item_ids_w  = item_ids[warm_mask_items]
+    item_mat_w  = item_mat[warm_mask_items]
 
-    # Compute hybrid score and take top-K unseen films per user
+    # ── Score and select top-K per user ──────────────────────────────────────
     print("Computing hybrid scores and selecting top-K per user...")
     records = []
-    for uid, group in als_pd.groupby("userId"):
-        vec  = user_vecs.get(uid, {})
+    for i, uid in enumerate(user_ids):
+        if i % 5000 == 0:
+            print(f"  {i:,} / {len(user_ids):,} users")
+
         seen = seen_by_user.get(uid, set())
-        unseen = group[~group.movieId.isin(seen)].copy()
+        vec  = user_vecs.get(uid, {})
 
-        def genre_score(movie_id: int) -> float:
-            genres = movie_genres.get(movie_id, [])
-            if not genres or not vec:
-                return 0.0
-            return sum(vec.get(g, 0) for g in genres) / len(genres)
+        # ALS scores via dot product: (I,)
+        als_scores = item_mat_w @ user_mat[i]
 
-        unseen = unseen.copy()
-        unseen["genre_s"] = unseen["movieId"].map(genre_score)
-        unseen["hybrid"]  = ALS_WEIGHT * unseen["als_norm"] + GENRE_WEIGHT * unseen["genre_s"]
+        # Mask seen items
+        seen_mask = np.isin(item_ids_w, list(seen))
+        als_scores[seen_mask] = -np.inf
 
-        top_k = unseen.nlargest(K, "hybrid").reset_index(drop=True)
-        for rank, row in enumerate(top_k.itertuples(), start=1):
-            title, genres = movie_meta.get(row.movieId, ("Unknown", ""))
+        # Normalise to [0, 1] per user
+        valid = als_scores[als_scores > -np.inf]
+        if len(valid) == 0:
+            continue
+        mn, mx = valid.min(), valid.max()
+        als_norm = (als_scores - mn) / (mx - mn + 1e-9)
+
+        # Genre scores
+        genre_arr = np.array([
+            (sum(vec.get(g, 0) for g in movie_genres.get(mid, [])) /
+             max(len(movie_genres.get(mid, [])), 1))
+            for mid in item_ids_w
+        ], dtype="float32")
+
+        hybrid = ALS_WEIGHT * als_norm + GENRE_WEIGHT * genre_arr
+
+        # Top-K indices
+        top_idx = np.argpartition(hybrid, -K)[-K:]
+        top_idx = top_idx[np.argsort(hybrid[top_idx])[::-1]]
+
+        for rank, idx in enumerate(top_idx, start=1):
+            mid = int(item_ids_w[idx])
+            title, genres = movie_meta.get(mid, ("Unknown", ""))
             records.append({
-                "user_id":  uid,
+                "user_id":  int(uid),
                 "rank":     rank,
-                "movie_id": row.movieId,
+                "movie_id": mid,
                 "title":    title,
                 "genres":   genres,
             })
 
     print(f"Total recommendations: {len(records):,}")
 
-    # Write to Supabase
+    # ── Write to Supabase ─────────────────────────────────────────────────────
     print("Inserting into Supabase...")
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     supabase.table("recommendations").delete().neq("user_id", -1).execute()
@@ -150,10 +164,10 @@ def main():
     for i in range(0, len(records), BATCH_SIZE):
         batch = records[i: i + BATCH_SIZE]
         supabase.table("recommendations").insert(batch).execute()
-        print(f"  Inserted {min(i + BATCH_SIZE, len(records)):,} / {len(records):,}")
+        if i % 10000 == 0:
+            print(f"  Inserted {min(i + BATCH_SIZE, len(records)):,} / {len(records):,}")
 
-    print("Done. Hybrid recommendations stored in Supabase.")
-    spark.stop()
+    print("Done.")
 
 
 if __name__ == "__main__":

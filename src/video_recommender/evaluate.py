@@ -1,8 +1,7 @@
 """Offline evaluation of FilmTwin recommendation baselines.
 
-Splits each user's ratings 80/20, generates Top-10 recommendations from each
-baseline using only the training 80%, then measures quality against the hidden
-20% test set.
+Splits ratings 80/20, generates Top-10 recommendations from each baseline
+using only the training 80%, then measures quality against the held-out 20%.
 
 Metrics (all at K=10):
   Precision@K  — fraction of recommended films the user actually liked
@@ -13,285 +12,302 @@ Metrics (all at K=10):
 Baselines:
   Random            — random unseen films
   Popularity        — globally most-rated unseen films
-  Genre similarity  — FilmTwin current: nearest user by genre vector → their liked films
-  ALS               — collaborative filtering only (current pre-computed recs)
-  Hybrid            — ALS score + genre-match score (item #2 improvement)
+  Genre similarity  — nearest user by genre vector → their ALS top-K
+  ALS               — collaborative filtering only
+  Hybrid            — 0.6 × ALS_norm + 0.4 × genre_score (deployed)
 
 Run:
   uv run python -m video_recommender.evaluate
 """
 import math
+import random
 from collections import defaultdict
+from pathlib import Path
 
+import numpy as np
 import pandas as pd
-from pyspark.ml.recommendation import ALSModel
-from pyspark.sql import functions as F
 
-from video_recommender.explore import get_spark, load_data
-from video_recommender.train_als import K, LIKED_THRESHOLD, MIN_MOVIE_RATINGS, SEED
+LIKED_THRESHOLD    = 4.0   # must match train_als.py
+MIN_MOVIE_RATINGS  = 5     # must match train_als.py
+SEED               = 42    # must match train_als.py
 
-# Hybrid weights — tune these using the evaluation results
-ALS_WEIGHT   = 0.6
+K          = 10
+ALS_WEIGHT = 0.6
 GENRE_WEIGHT = 0.4
+
+DATA_DIR  = Path("data/ml-latest")
+MODEL_DIR = Path("models/als")
+
+GENRE_ORDER = [
+    "Action", "Adventure", "Animation", "Children", "Comedy", "Crime",
+    "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "IMAX",
+    "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western",
+]
+GENRE_IDX = {g: i for i, g in enumerate(GENRE_ORDER)}
+N_GENRES  = len(GENRE_ORDER)
+
+
+# ── Data loading ──────────────────────────────────────────────────────────────
+
+def load_data():
+    print("Loading ratings and movies...")
+    ratings = pd.read_csv(
+        DATA_DIR / "ratings.csv",
+        usecols=["userId", "movieId", "rating"],
+        dtype={"userId": "int32", "movieId": "int32", "rating": "float32"},
+    )
+    movies = pd.read_csv(DATA_DIR / "movies.csv", dtype={"movieId": "int32"})
+
+    rng  = np.random.default_rng(SEED)
+    mask = rng.random(len(ratings)) < 0.8
+    train = ratings[mask].copy()
+    test  = ratings[~mask].copy()
+
+    counts    = train.groupby("movieId")["movieId"].transform("count")
+    warm_mask = counts >= MIN_MOVIE_RATINGS
+    train     = train[warm_mask]
+    warm_ids  = set(train["movieId"].unique())
+    test      = test[test["movieId"].isin(warm_ids)]
+
+    movie_genres: dict[int, list[str]] = {}
+    for row in movies.itertuples():
+        if row.genres != "(no genres listed)":
+            movie_genres[row.movieId] = row.genres.split("|")
+
+    all_movie_ids = movies["movieId"].tolist()
+    print(f"  Train: {len(train):,}  Test: {len(test):,}  Warm items: {len(warm_ids):,}")
+    return train, test, movie_genres, all_movie_ids, warm_ids
+
+
+def load_factors():
+    print("Loading ALS factor matrices...")
+    user_df  = pd.read_parquet(MODEL_DIR / "userFactors")
+    item_df  = pd.read_parquet(MODEL_DIR / "itemFactors")
+    user_ids = user_df["id"].to_numpy(dtype="int32")
+    user_mat = np.stack(user_df["features"].to_numpy()).astype("float32")
+    item_ids = item_df["id"].to_numpy(dtype="int32")
+    item_mat = np.stack(item_df["features"].to_numpy()).astype("float32")
+    print(f"  Users: {len(user_ids):,}  Items: {len(item_ids):,}  Rank: {user_mat.shape[1]}")
+    return user_ids, user_mat, item_ids, item_mat
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 
-def ranking_metrics(recs_pd: pd.DataFrame, test_pd: pd.DataFrame,
-                    k: int = K, liked_threshold: float = LIKED_THRESHOLD) -> dict:
-    """Return Precision@K, Recall@K, NDCG@K, Hit Rate@K averaged across users.
-
-    Only users with at least one liked test film are included — users with
-    zero liked test films can never produce a hit regardless of the model.
-    """
-    liked = (test_pd[test_pd.rating >= liked_threshold]
-             .groupby("userId")["movieId"].apply(set).to_dict())
-    recs_by_user = (recs_pd.groupby("userId")["movieId"].apply(list).to_dict())
+def ranking_metrics(recs: pd.DataFrame, test: pd.DataFrame) -> dict:
+    liked_by   = (test[test["rating"] >= LIKED_THRESHOLD]
+                  .groupby("userId")["movieId"].apply(set).to_dict())
+    recs_by    = recs.groupby("userId")["movieId"].apply(list).to_dict()
 
     precision_list, recall_list, ndcg_list, hit_list = [], [], [], []
-
-    for uid, liked_set in liked.items():
-        rec_list = recs_by_user.get(uid, [])[:k]
+    for uid, liked_set in liked_by.items():
+        rec_list = recs_by.get(uid, [])[:K]
         if not rec_list:
             continue
-
-        hits = [1 if m in liked_set else 0 for m in rec_list]
-        n_hits = sum(hits)
-
-        precision_list.append(n_hits / k)
-        recall_list.append(n_hits / len(liked_set))
-
+        hits  = [1 if m in liked_set else 0 for m in rec_list]
+        n_hit = sum(hits)
+        precision_list.append(n_hit / K)
+        recall_list.append(n_hit / len(liked_set))
         dcg   = sum(h / math.log2(i + 2) for i, h in enumerate(hits))
-        ideal = sum(1 / math.log2(i + 2) for i in range(min(len(liked_set), k)))
+        ideal = sum(1 / math.log2(i + 2) for i in range(min(len(liked_set), K)))
         ndcg_list.append(dcg / ideal if ideal > 0 else 0.0)
-
-        hit_list.append(1.0 if n_hits > 0 else 0.0)
+        hit_list.append(1.0 if n_hit > 0 else 0.0)
 
     n = len(precision_list)
-    if n == 0:
-        return {"Precision@K": 0, "Recall@K": 0, "NDCG@K": 0, "Hit Rate@K": 0, "N": 0}
-
     return {
-        "Precision@K": sum(precision_list) / n,
-        "Recall@K":    sum(recall_list)    / n,
-        "NDCG@K":      sum(ndcg_list)      / n,
-        "Hit Rate@K":  sum(hit_list)       / n,
-        "N":           n,
+        "Precision@K": sum(precision_list) / n if n else 0.0,
+        "Recall@K":    sum(recall_list)    / n if n else 0.0,
+        "NDCG@K":      sum(ndcg_list)      / n if n else 0.0,
+        "Hit Rate@K":  sum(hit_list)       / n if n else 0.0,
+        "N": n,
     }
+
+
+# ── Genre helpers ─────────────────────────────────────────────────────────────
+
+def build_genre_vecs(train: pd.DataFrame, movie_genres: dict) -> dict[int, np.ndarray]:
+    liked = train[train["rating"] >= LIKED_THRESHOLD]
+    vecs: dict[int, np.ndarray] = {}
+    for uid, grp in liked.groupby("userId"):
+        vec = np.zeros(N_GENRES, dtype="float32")
+        for mid in grp["movieId"]:
+            for g in movie_genres.get(mid, []):
+                if g in GENRE_IDX:
+                    vec[GENRE_IDX[g]] += 1.0
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vecs[int(uid)] = vec / norm
+    return vecs
+
+
+def item_genre_matrix(item_ids_w: np.ndarray, movie_genres: dict) -> np.ndarray:
+    mat = np.zeros((len(item_ids_w), N_GENRES), dtype="float32")
+    for j, mid in enumerate(item_ids_w):
+        for g in movie_genres.get(int(mid), []):
+            if g in GENRE_IDX:
+                mat[j, GENRE_IDX[g]] = 1.0
+    counts = np.maximum(mat.sum(axis=1, keepdims=True), 1)
+    return mat / counts  # (I, G) normalised
 
 
 # ── Baselines ─────────────────────────────────────────────────────────────────
 
-def random_recs(train_pd: pd.DataFrame, all_movie_ids: list,
-                k: int = K, seed: int = SEED) -> pd.DataFrame:
-    """Randomly select K unseen films per user."""
-    import random
-    rng = random.Random(seed)
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
+def baseline_random(train: pd.DataFrame, all_movie_ids: list) -> pd.DataFrame:
+    rng = random.Random(SEED)
+    seen_by = train.groupby("userId")["movieId"].apply(set).to_dict()
     rows = []
-    for uid, seen in seen_by_user.items():
-        pool = [m for m in all_movie_ids if m not in seen]
-        picks = rng.sample(pool, min(k, len(pool)))
+    for uid, seen in seen_by.items():
+        pool  = [m for m in all_movie_ids if m not in seen]
+        picks = rng.sample(pool, min(K, len(pool)))
         rows.extend({"userId": uid, "movieId": m} for m in picks)
     return pd.DataFrame(rows)
 
 
-def popularity_recs(train_pd: pd.DataFrame, k: int = K) -> pd.DataFrame:
-    """Top-K globally most-rated unseen films per user."""
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
-    pop_order = (train_pd.groupby("movieId").size()
-                 .sort_values(ascending=False).index.tolist())
+def baseline_popularity(train: pd.DataFrame) -> pd.DataFrame:
+    seen_by   = train.groupby("userId")["movieId"].apply(set).to_dict()
+    pop_order = train.groupby("movieId").size().sort_values(ascending=False).index.tolist()
     rows = []
-    for uid, seen in seen_by_user.items():
-        picks = [m for m in pop_order if m not in seen][:k]
+    for uid, seen in seen_by.items():
+        picks = [m for m in pop_order if m not in seen][:K]
         rows.extend({"userId": uid, "movieId": m} for m in picks)
     return pd.DataFrame(rows)
 
 
-def _build_genre_vecs(train_pd: pd.DataFrame, movie_genres: dict,
-                      liked_threshold: float = LIKED_THRESHOLD) -> dict:
-    """Build unit-normalised genre preference vectors for each user."""
-    liked = train_pd[train_pd.rating >= liked_threshold]
-    vecs: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for row in liked.itertuples():
-        for g in movie_genres.get(row.movieId, []):
-            vecs[row.userId][g] += row.rating
-    for uid, vec in vecs.items():
-        mag = sum(v * v for v in vec.values()) ** 0.5
-        if mag > 0:
-            for g in vec:
-                vec[g] /= mag
-    return vecs
+def baseline_genre_sim(
+    train: pd.DataFrame,
+    user_ids: np.ndarray,
+    user_mat: np.ndarray,
+    item_ids_w: np.ndarray,
+    item_mat_w: np.ndarray,
+    movie_genres: dict,
+) -> pd.DataFrame:
+    """Nearest user by genre vector → their ALS top-K (FilmTwin v1 approach)."""
+    genre_vecs  = build_genre_vecs(train, movie_genres)
+    seen_by     = train.groupby("userId")["movieId"].apply(set).to_dict()
+    uid_to_row  = {int(uid): i for i, uid in enumerate(user_ids)}
 
-
-def genre_sim_recs(train_pd: pd.DataFrame, movie_genres: dict,
-                   als_preds_pd: pd.DataFrame, k: int = K) -> pd.DataFrame:
-    """FilmTwin current approach: nearest user by genre vector → their ALS top-K.
-
-    This is the approach FilmTwin uses in production. We evaluate it as a
-    baseline to see how much the hybrid improves things.
-    """
-    vecs = _build_genre_vecs(train_pd, movie_genres)
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
-    all_users = sorted(vecs.keys())
-
-    # Find nearest other user for each user
-    def cosine(a: dict, b: dict) -> float:
-        return sum(a.get(g, 0) * v for g, v in b.items())
+    # Build aligned genre matrix
+    genre_mat = np.zeros((len(user_ids), N_GENRES), dtype="float32")
+    for uid, vec in genre_vecs.items():
+        if uid in uid_to_row:
+            genre_mat[uid_to_row[uid]] = vec
 
     rows = []
-    for uid in all_users:
-        vec = vecs[uid]
-        if not vec:
+    for row_i, uid in enumerate(user_ids):
+        uid = int(uid)
+        if uid not in genre_vecs:
             continue
-        best_sim, best_uid = -1.0, None
-        for other in all_users:
-            if other == uid:
-                continue
-            sim = cosine(vec, vecs[other])
-            if sim > best_sim:
-                best_sim, best_uid = sim, other
-        if best_uid is None:
+        query = genre_vecs[uid]
+        sims  = genre_mat @ query
+        sims[row_i] = -np.inf
+        twin_row = int(np.argmax(sims))
+        seen = seen_by.get(uid, set())
+        als_scores = item_mat_w @ user_mat[twin_row]
+        seen_mask  = np.isin(item_ids_w, list(seen))
+        als_scores[seen_mask] = -np.inf
+        top_idx = np.argpartition(als_scores, -K)[-K:]
+        top_idx = top_idx[np.argsort(als_scores[top_idx])[::-1]]
+        rows.extend({"userId": uid, "movieId": int(item_ids_w[i])} for i in top_idx)
+    return pd.DataFrame(rows)
+
+
+def baseline_als(
+    train: pd.DataFrame,
+    user_ids: np.ndarray,
+    user_mat: np.ndarray,
+    item_ids_w: np.ndarray,
+    item_mat_w: np.ndarray,
+) -> pd.DataFrame:
+    seen_by = train.groupby("userId")["movieId"].apply(set).to_dict()
+    rows = []
+    for row_i, uid in enumerate(user_ids):
+        uid = int(uid)
+        scores    = item_mat_w @ user_mat[row_i]
+        seen      = seen_by.get(uid, set())
+        seen_mask = np.isin(item_ids_w, list(seen))
+        scores[seen_mask] = -np.inf
+        top_idx = np.argpartition(scores, -K)[-K:]
+        top_idx = top_idx[np.argsort(scores[top_idx])[::-1]]
+        rows.extend({"userId": uid, "movieId": int(item_ids_w[i])} for i in top_idx)
+    return pd.DataFrame(rows)
+
+
+def baseline_hybrid(
+    train: pd.DataFrame,
+    user_ids: np.ndarray,
+    user_mat: np.ndarray,
+    item_ids_w: np.ndarray,
+    item_mat_w: np.ndarray,
+    movie_genres: dict,
+) -> pd.DataFrame:
+    genre_vecs   = build_genre_vecs(train, movie_genres)
+    seen_by      = train.groupby("userId")["movieId"].apply(set).to_dict()
+    item_genre_m = item_genre_matrix(item_ids_w, movie_genres)  # (I, G)
+
+    rows = []
+    for row_i, uid in enumerate(user_ids):
+        uid = int(uid)
+        als_scores = item_mat_w @ user_mat[row_i]
+        seen       = seen_by.get(uid, set())
+        seen_mask  = np.isin(item_ids_w, list(seen))
+
+        valid = als_scores[~seen_mask]
+        if len(valid) == 0:
             continue
-        # Return the twin's ALS top-K, filtered to movies unseen by this user
-        seen = seen_by_user.get(uid, set())
-        twin_recs = (als_preds_pd[als_preds_pd.userId == best_uid]
-                     .sort_values("prediction", ascending=False))
-        picks = [r.movieId for r in twin_recs.itertuples() if r.movieId not in seen][:k]
-        rows.extend({"userId": uid, "movieId": m} for m in picks)
+        mn, mx   = valid.min(), valid.max()
+        als_norm = (als_scores - mn) / (mx - mn + 1e-9)
+        als_norm[seen_mask] = -np.inf
 
-    return pd.DataFrame(rows)
+        query       = genre_vecs.get(uid, np.zeros(N_GENRES, dtype="float32"))
+        genre_score = item_genre_m @ query
+        hybrid      = ALS_WEIGHT * als_norm + GENRE_WEIGHT * genre_score
+        hybrid[seen_mask] = -np.inf
 
-
-def als_recs(als_preds_pd: pd.DataFrame, train_pd: pd.DataFrame,
-             k: int = K) -> pd.DataFrame:
-    """Standard ALS: top-K predicted-rating films, excluding seen ones."""
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
-    rows = []
-    for uid, group in als_preds_pd.groupby("userId"):
-        seen = seen_by_user.get(uid, set())
-        picks = (group[~group.movieId.isin(seen)]
-                 .nlargest(k, "prediction").movieId.tolist())
-        rows.extend({"userId": uid, "movieId": m} for m in picks)
-    return pd.DataFrame(rows)
-
-
-def hybrid_recs(als_preds_pd: pd.DataFrame, train_pd: pd.DataFrame,
-                movie_genres: dict, k: int = K,
-                als_w: float = ALS_WEIGHT, genre_w: float = GENRE_WEIGHT) -> pd.DataFrame:
-    """Hybrid: normalised ALS score + genre-match score.
-
-    Genre-match score for a (user, movie) pair:
-      average of user_genre_vec[g] for each genre g in the movie.
-    This rewards films whose genres align with the user's taste profile.
-
-    ALS scores are normalised per-user to [0, 1] before combining, so the
-    weights are comparable across users whose raw ALS scales differ.
-    """
-    vecs = _build_genre_vecs(train_pd, movie_genres)
-    seen_by_user = train_pd.groupby("userId")["movieId"].apply(set).to_dict()
-
-    # Per-user min/max normalisation of ALS predictions
-    als_pd = als_preds_pd.copy()
-    stats = als_pd.groupby("userId")["prediction"].agg(["min", "max"]).reset_index()
-    als_pd = als_pd.merge(stats, on="userId")
-    als_pd["als_norm"] = (
-        (als_pd["prediction"] - als_pd["min"])
-        / (als_pd["max"] - als_pd["min"] + 1e-9)
-    )
-
-    rows = []
-    for uid, group in als_pd.groupby("userId"):
-        vec = vecs.get(uid, {})
-        seen = seen_by_user.get(uid, set())
-        unseen = group[~group.movieId.isin(seen)].copy()
-
-        def genre_score(movie_id: int) -> float:
-            genres = movie_genres.get(movie_id, [])
-            if not genres or not vec:
-                return 0.0
-            return sum(vec.get(g, 0) for g in genres) / len(genres)
-
-        unseen = unseen.copy()
-        unseen["genre_s"] = unseen["movieId"].map(genre_score)
-        unseen["hybrid"]  = als_w * unseen["als_norm"] + genre_w * unseen["genre_s"]
-
-        picks = unseen.nlargest(k, "hybrid")["movieId"].tolist()
-        rows.extend({"userId": uid, "movieId": m} for m in picks)
-
+        top_idx = np.argpartition(hybrid, -K)[-K:]
+        top_idx = top_idx[np.argsort(hybrid[top_idx])[::-1]]
+        rows.extend({"userId": uid, "movieId": int(item_ids_w[i])} for i in top_idx)
     return pd.DataFrame(rows)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    spark = get_spark("evaluate")
-    ratings, movies = load_data(spark)
-    ratings = ratings.drop("timestamp")
+    train, test, movie_genres, all_movie_ids, warm_ids = load_data()
+    user_ids, user_mat, item_ids, item_mat = load_factors()
 
-    train_spark, test_spark = ratings.randomSplit([0.8, 0.2], seed=SEED)
+    warm_mask  = np.isin(item_ids, list(warm_ids))
+    item_ids_w = item_ids[warm_mask]
+    item_mat_w = item_mat[warm_mask]
 
-    # Apply the same cold-movie filter used during training
-    movie_counts = train_spark.groupBy("movieId").agg(F.count("*").alias("count"))
-    warm = movie_counts.filter(F.col("count") >= MIN_MOVIE_RATINGS).select("movieId")
-    train_spark = train_spark.join(warm, "movieId")
-    test_spark  = test_spark.join(warm,  "movieId")
+    print(f"\nEvaluating Top-{K} recommendations...\n")
 
-    train_pd    = train_spark.toPandas()
-    test_pd     = test_spark.toPandas()
-    movies_pd   = movies.toPandas()
-
-    movie_genres = {
-        r.movieId: r.genres.split("|")
-        for r in movies_pd.itertuples()
-        if r.genres != "(no genres listed)"
-    }
-    all_movie_ids = movies_pd["movieId"].tolist()
-
-    print(f"Train: {len(train_pd):,} ratings  Test: {len(test_pd):,} ratings")
-    print(f"Evaluating Top-{K} recommendations...\n")
-
-    # ALS predictions for all (user, movie) pairs — used by ALS, genre-sim, hybrid
-    print("Loading ALS model and scoring all user-movie pairs...")
-    model = ALSModel.load("models/als")
-    users_spark  = train_spark.select("userId").distinct()
-    movies_spark = train_spark.select("movieId").distinct()
-    all_pairs    = users_spark.crossJoin(movies_spark)
-    als_preds_pd = (model.transform(all_pairs)
-                    .filter(F.col("prediction").isNotNull())
-                    .toPandas())
-    print(f"ALS scored {len(als_preds_pd):,} user-movie pairs\n")
-
-    baselines = {
-        "Random":           lambda: random_recs(train_pd, all_movie_ids),
-        "Popularity":       lambda: popularity_recs(train_pd),
-        "Genre similarity": lambda: genre_sim_recs(train_pd, movie_genres, als_preds_pd),
-        "ALS":              lambda: als_recs(als_preds_pd, train_pd),
-        "Hybrid":           lambda: hybrid_recs(als_preds_pd, train_pd, movie_genres),
-    }
+    baselines = [
+        ("Random",           lambda: baseline_random(train, all_movie_ids)),
+        ("Popularity",       lambda: baseline_popularity(train)),
+        ("Genre similarity", lambda: baseline_genre_sim(train, user_ids, user_mat, item_ids_w, item_mat_w, movie_genres)),
+        ("ALS",              lambda: baseline_als(train, user_ids, user_mat, item_ids_w, item_mat_w)),
+        ("Hybrid",           lambda: baseline_hybrid(train, user_ids, user_mat, item_ids_w, item_mat_w, movie_genres)),
+    ]
 
     results = {}
-    for name, fn in baselines.items():
-        print(f"  Computing {name}...")
-        results[name] = ranking_metrics(fn(), test_pd)
+    for name, fn in baselines:
+        print(f"  Computing {name}...", flush=True)
+        results[name] = ranking_metrics(fn(), test)
 
-    # Print comparison table
-    col_w = 14
-    header_cols = ["Precision@K", "Recall@K", "NDCG@K", "Hit Rate@K", "N"]
+    col_w   = 14
+    headers = ["Precision@K", "Recall@K", "NDCG@K", "Hit Rate@K", "N"]
     print(f"\n{'Baseline':25}", end="")
-    for col in header_cols:
-        print(f"{col:>{col_w}}", end="")
+    for h in headers:
+        print(f"{h:>{col_w}}", end="")
     print()
-    print("-" * (25 + col_w * len(header_cols)))
+    print("-" * (25 + col_w * len(headers)))
     for name, scores in results.items():
         print(f"{name:25}", end="")
-        for col in header_cols:
-            v = scores[col]
+        for h in headers:
+            v = scores[h]
             print(f"{v:>{col_w}.4f}" if isinstance(v, float) else f"{v:>{col_w}}", end="")
         print()
 
-    print(f"\nLIKED_THRESHOLD={LIKED_THRESHOLD}  K={K}")
-    spark.stop()
+    print(f"\nLIKED_THRESHOLD={LIKED_THRESHOLD}  K={K}  seed={SEED}")
 
 
 if __name__ == "__main__":

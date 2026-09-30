@@ -1,10 +1,10 @@
-"""Load MovieLens ml-latest-small into Spark and explore it.
+"""Load MovieLens ml-latest into Spark and explore it.
 
 Run from the project root:  uv run python -m video_recommender.explore
 """
 from pyspark.sql import SparkSession, functions as F
 
-DATA_DIR = "data/ml-latest-small"
+DATA_DIR = "data/ml-latest"
 
 
 def get_spark(app_name: str) -> SparkSession:
@@ -13,9 +13,15 @@ def get_spark(app_name: str) -> SparkSession:
         SparkSession.builder.appName(app_name)
         # local[*] = run Spark on this machine using all CPU cores
         .master("local[*]")
-        .config("spark.driver.memory", "2g")
+        .config("spark.driver.memory", "3g")
+        .config("spark.driver.memoryOverhead", "512m")
         # The default of 200 shuffle partitions is overkill for 100K rows
         .config("spark.sql.shuffle.partitions", "8")
+        # /tmp is a tiny tmpfs; use the real disk for shuffle spill
+        .config("spark.local.dir", "/home/nanph/projects/video-recommender/.spark-tmp")
+        # Spill to disk aggressively rather than OOM
+        .config("spark.memory.fraction", "0.6")
+        .config("spark.memory.storageFraction", "0.3")
         .getOrCreate()
     )
     spark.sparkContext.setLogLevel("WARN")

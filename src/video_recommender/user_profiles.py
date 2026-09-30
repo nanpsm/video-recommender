@@ -1,19 +1,24 @@
 """Compute per-user genre preference scores and store them in Supabase.
 
-For each user, we look at movies they rated >= 4.0 (liked), extract the genres
-of those movies, and build a normalised score vector. This lets the frontend find
-the closest real user by cosine similarity when a visitor rates a few movies.
+Uses pure pandas (no Spark) — reads ratings.csv and movies.csv directly.
+
+Writes two tables:
+  user_genre_profiles  — (user_id, genre, score) rows for Taste DNA display
+  user_embeddings      — (user_id, vector(19)) for server-side twin matching via pgvector
+
+SUPABASE_SERVICE_KEY must be set as an environment variable — never commit it.
+The anon key is safe to hardcode (public read-only access).
+The service key bypasses RLS and is used only for writes in this script.
 
 Run:  uv run python -m video_recommender.user_profiles
 """
 import os
 from collections import defaultdict
+from pathlib import Path
 
-from pyspark.sql import functions as F
+import numpy as np
+import pandas as pd
 from supabase import create_client
-
-from video_recommender.explore import get_spark, load_data
-from video_recommender.train_als import MIN_MOVIE_RATINGS, SEED
 
 SUPABASE_URL = "https://spmtgrmedfilavekoije.supabase.co"
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -23,68 +28,107 @@ if not SUPABASE_SERVICE_KEY:
         "  export SUPABASE_SERVICE_KEY='your-service-role-key'"
     )
 
-LIKED_THRESHOLD = 3.5   # ratings >= this count toward genre affinity
-BATCH_SIZE = 500
+DATA_DIR         = Path("data/ml-latest")
+LIKED_THRESHOLD  = 3.5
+BATCH_SIZE       = 500
+SEED             = 42
+MIN_MOVIE_RATINGS = 5
+
+# Fixed genre order for pgvector embedding (dimension = 19)
+GENRES = [
+    "Action", "Adventure", "Animation", "Children", "Comedy", "Crime",
+    "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "IMAX",
+    "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western",
+]
+GENRE_IDX = {g: i for i, g in enumerate(GENRES)}
 
 
 def main():
-    spark = get_spark("user_profiles")
+    print("Loading ratings and movies...")
+    ratings = pd.read_csv(DATA_DIR / "ratings.csv",
+                          usecols=["userId", "movieId", "rating"],
+                          dtype={"userId": "int32", "movieId": "int32", "rating": "float32"})
+    movies = pd.read_csv(DATA_DIR / "movies.csv",
+                         dtype={"movieId": "int32"})
 
-    ratings, movies = load_data(spark)
-    ratings = ratings.drop("timestamp")
+    # Same 80/20 train split used in training
+    rng   = np.random.default_rng(SEED)
+    mask  = rng.random(len(ratings)) < 0.8
+    train = ratings[mask].copy()
 
-    # Use the same 80/20 split as training so genre vectors match the
-    # collaborative-filtering model's view of each user's history
-    train, _ = ratings.randomSplit([0.8, 0.2], seed=SEED)
+    # Same cold-movie filter
+    counts    = train.groupby("movieId")["movieId"].transform("count")
+    train     = train[counts >= MIN_MOVIE_RATINGS]
 
-    # Apply the same cold-movie filter used during training
-    movie_counts = train.groupBy("movieId").agg(F.count("*").alias("count"))
-    warm = movie_counts.filter(F.col("count") >= MIN_MOVIE_RATINGS).select("movieId")
-    train = train.join(warm, "movieId")
+    # Keep only liked ratings
+    liked = train[train["rating"] >= LIKED_THRESHOLD]
 
-    # Keep only liked ratings, join with movie genres
-    liked = (
-        train
-        .filter(F.col("rating") >= LIKED_THRESHOLD)
-        .join(movies.select("movieId", "genres"), "movieId")
+    # Build genre lookup
+    movie_genres: dict[int, list[str]] = {}
+    for row in movies.itertuples():
+        if row.genres != "(no genres listed)":
+            movie_genres[row.movieId] = row.genres.split("|")
+
+    # Join liked ratings with genres
+    liked_genres = liked.merge(
+        movies[["movieId", "genres"]], on="movieId", how="inner"
     )
 
-    # Collect to Python — ~30K rows is fine
-    rows = liked.select("userId", "genres", "rating").collect()
-    spark.stop()
-
-    # Build per-user genre score: sum of ratings across movies containing each genre
+    print("Building genre preference vectors...")
     user_genre: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for row in rows:
+    for row in liked_genres.itertuples():
         for genre in row.genres.split("|"):
             if genre == "(no genres listed)":
                 continue
             user_genre[row.userId][genre] += float(row.rating)
 
-    # Normalise each user's vector to unit length (for cosine similarity)
-    records = []
+    profile_rows   = []
+    embedding_rows = []
+
     for user_id, genre_scores in user_genre.items():
-        total = sum(v * v for v in genre_scores.values()) ** 0.5
-        if total == 0:
+        mag = sum(v * v for v in genre_scores.values()) ** 0.5
+        if mag == 0:
             continue
+
+        # Sparse profile rows for Taste DNA display
         for genre, score in genre_scores.items():
-            records.append({
-                "user_id": user_id,
+            profile_rows.append({
+                "user_id": int(user_id),
                 "genre":   genre,
-                "score":   round(score / total, 6),
+                "score":   round(score / mag, 6),
             })
 
-    print(f"Total user-genre rows: {len(records):,}")
+        # Dense fixed-dim vector for pgvector
+        vec = [0.0] * len(GENRES)
+        for genre, score in genre_scores.items():
+            if genre in GENRE_IDX:
+                vec[GENRE_IDX[genre]] = round(score / mag, 6)
+        embedding_rows.append({"user_id": int(user_id), "embedding": vec})
+
+    print(f"Users: {len(embedding_rows):,}  |  profile rows: {len(profile_rows):,}")
 
     sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    # Clear existing data
-    sb.table("user_genre_profiles").delete().neq("user_id", -1).execute()
+    skip_profiles = os.environ.get("SKIP_PROFILES") == "1"
 
-    for i in range(0, len(records), BATCH_SIZE):
-        batch = records[i: i + BATCH_SIZE]
-        sb.table("user_genre_profiles").insert(batch).execute()
-        print(f"  Inserted {min(i + BATCH_SIZE, len(records)):,} / {len(records):,}")
+    # ── user_genre_profiles ───────────────────────────────────────────────────
+    if skip_profiles:
+        print("Skipping user_genre_profiles (SKIP_PROFILES=1)")
+    else:
+        print("Clearing user_genre_profiles...")
+        sb.table("user_genre_profiles").delete().neq("user_id", -1).execute()
+        for i in range(0, len(profile_rows), BATCH_SIZE):
+            sb.table("user_genre_profiles").insert(profile_rows[i: i + BATCH_SIZE]).execute()
+            if (i // BATCH_SIZE) % 20 == 0:
+                print(f"  profiles {min(i + BATCH_SIZE, len(profile_rows)):,} / {len(profile_rows):,}")
+
+    # ── user_embeddings ───────────────────────────────────────────────────────
+    # Table was pre-truncated via SQL (DELETE times out on large tables)
+    print("Inserting user_embeddings...")
+    for i in range(0, len(embedding_rows), BATCH_SIZE):
+        sb.table("user_embeddings").insert(embedding_rows[i: i + BATCH_SIZE]).execute()
+        if (i // BATCH_SIZE) % 20 == 0:
+            print(f"  embeddings {min(i + BATCH_SIZE, len(embedding_rows)):,} / {len(embedding_rows):,}")
 
     print("Done.")
 

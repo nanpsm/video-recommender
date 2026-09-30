@@ -21,7 +21,7 @@ TOPIC = "rating-events"
 KAFKA_BROKER = "localhost:9092"  # matches the port we exposed in docker-compose.yml
 
 # Path to the ratings file — we read it once to get valid user/movie IDs
-RATINGS_FILE = "data/ml-latest-small/ratings.csv"
+RATINGS_FILE = "data/ml-latest/ratings.csv"
 
 # How long to wait between sending events (seconds)
 DELAY_SECONDS = 2
