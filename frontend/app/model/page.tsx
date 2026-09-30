@@ -85,7 +85,7 @@ const MODEL_CARDS = [
   },
   {
     tag: 'Matching', title: 'Top-5 neighbourhood blending',
-    body: 'A unit-normalised genre preference vector is stored per user in Supabase (323,733 users). Server-side pgvector RPC searches all 323K users and returns the top-20 nearest neighbours by cosine similarity. The true nearest match is shown as the Film Twin identity; recommendations are blended from ALS-trained neighbours: score(film) = Σ sim(neighbour) × (1/rank). Threshold: cosine sim ≥ 0.1.',
+    body: 'A unit-normalised genre preference vector is stored per user in Supabase (323,733 users). Server-side pgvector RPC searches all 323K users and returns the top-50 nearest neighbours by cosine similarity. The true nearest match is shown as the Film Twin identity; recommendations are blended from ALS-trained neighbours: score(film) = Σ sim(neighbour) × (1/rank). Threshold: cosine sim ≥ 0.1.',
     badges: ['Top-20 search', 'pgvector RPC', '323,733 users'],
   },
 ]
