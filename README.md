@@ -4,7 +4,8 @@
 
 **[Try FilmTwin →](https://filmtwin.vercel.app)**
 
-![FilmTwin screenshot](docs/screenshot.png)
+<!-- DEMO GIF: replace the path below with your uploaded GIF (drag into GitHub editor to get the URL) -->
+![FilmTwin demo](docs/demo.gif)
 
 ---
 
