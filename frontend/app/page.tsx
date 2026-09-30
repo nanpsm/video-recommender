@@ -376,7 +376,7 @@ export default function Home() {
     // Server-side nearest-neighbour search via pgvector RPC — searches all 323K users
     const { data: twinRows, error: te } = await supabase.rpc('find_twin', {
       query_embedding: queryEmbedding,
-      match_count: 20,
+      match_count: 50,
       min_similarity: 0.1,
     })
     if (te || !twinRows || twinRows.length === 0) {
@@ -390,7 +390,7 @@ export default function Home() {
     const recSourceRows = (twinRows as Array<{ user_id: number; similarity: number; has_recs: boolean }>)
       .filter(r => r.has_recs)
     if (recSourceRows.length === 0) {
-      setError('No recommendations available for your taste profile — try rating a few more films.')
+      setError('No recommendations found for your taste profile. Try restarting and rating a different mix of films.')
       setStep('rate')
       return
     }
@@ -624,7 +624,7 @@ export default function Home() {
         },
         {
           n: '—', head: 'Genre profiles in Supabase',
-          body: 'For each of the 323,733 users, a unit-normalised genre preference vector is precomputed and stored as a pgvector embedding in Supabase. The browser sends your genre vector and the database returns your top-20 nearest neighbours using an HNSW index — no bulk download needed.',
+          body: 'For each of the 323,733 users, a unit-normalised genre preference vector is precomputed and stored as a pgvector embedding in Supabase. The browser sends your genre vector and the database returns your top-50 nearest neighbours using an HNSW index — no bulk download needed.',
         },
       ],
     },
@@ -802,7 +802,7 @@ export default function Home() {
               {[
                 { tag: 'Dataset', head: 'MovieLens ml-latest', body: 'Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 – 5.0. Updated to 2023.', badge: 'GroupLens · UMN' },
                 { tag: 'Model', head: 'Apache Spark ALS', body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=10, regParam=0.05). Trained on 32,813 users. RMSE 0.82 on held-out test set.', badge: 'RMSE 0.82' },
-                { tag: 'Matching', head: 'Genre profiles in Supabase', body: 'A unit-normalised genre vector is precomputed per user and stored in Supabase. The browser sends your vector and the database returns top-20 nearest neighbours via pgvector RPC — no bulk download.', badge: '323,733 users' },
+                { tag: 'Matching', head: 'Genre profiles in Supabase', body: 'A unit-normalised genre vector is precomputed per user and stored in Supabase. The browser sends your vector and the database returns top-50 nearest neighbours via pgvector RPC — no bulk download.', badge: '323,733 users' },
               ].map((card, i) => (
                 <div key={i} style={{ display: 'flex', gap: 16, padding: '16px 0', borderTop: `1px solid ${BORDER}` }}>
                   <div style={{ width: 68, flexShrink: 0 }}>
@@ -1269,7 +1269,7 @@ export default function Home() {
         {[
           'Fetching viewer profiles',
           'Computing cosine similarity',
-          'Blending top-20 neighbours',
+          'Blending top-50 neighbours',
           'Ranking recommendations',
         ].map((label, i) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }}>
