@@ -135,6 +135,40 @@ const ALL_FILMS = [
   { id: 918,    tmdbId: 11236,  title: 'Platoon',                             year: 1986, genres: ['Drama', 'War'] },
   { id: 1435,   tmdbId: 600,    title: 'Full Metal Jacket',                   year: 1987, genres: ['Drama', 'War'] },
   { id: 176371, tmdbId: 374720, title: 'Dunkirk',                             year: 2017, genres: ['Action', 'Drama', 'Thriller', 'War'] },
+  // Crime (extra)
+  { id: 196377, tmdbId: 496243, title: 'Parasite',                            year: 2019, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 102123, tmdbId: 146233, title: 'Prisoners',                           year: 2013, genres: ['Crime', 'Drama', 'Mystery', 'Thriller'] },
+  { id: 114060, tmdbId: 242582, title: 'Nightcrawler',                        year: 2014, genres: ['Crime', 'Drama', 'Thriller'] },
+  { id: 55820,  tmdbId: 627,    title: 'Trainspotting',                       year: 1996, genres: ['Crime', 'Drama'] },
+  // Thriller (extra)
+  { id: 79702,  tmdbId: 45672,  title: 'Black Swan',                          year: 2010, genres: ['Drama', 'Thriller'] },
+  { id: 99114,  tmdbId: 314365, title: 'Spotlight',                           year: 2015, genres: ['Drama', 'Thriller'] },
+  { id: 4571,   tmdbId: 1018,   title: 'Mulholland Drive',                    year: 2001, genres: ['Drama', 'Mystery', 'Thriller'] },
+  // Adventure (extra)
+  { id: 2628,   tmdbId: 85,     title: 'Raiders of the Lost Ark',             year: 1981, genres: ['Action', 'Adventure'] },
+  { id: 1387,   tmdbId: 2493,   title: 'The Princess Bride',                  year: 1987, genres: ['Adventure', 'Comedy', 'Fantasy', 'Romance'] },
+  { id: 6566,   tmdbId: 22,     title: 'Pirates of the Caribbean',            year: 2003, genres: ['Action', 'Adventure', 'Fantasy'] },
+  { id: 45517,  tmdbId: 773,    title: 'Little Miss Sunshine',                year: 2006, genres: ['Adventure', 'Comedy', 'Drama'] },
+  // Romance (extra)
+  { id: 4776,   tmdbId: 194,    title: 'Amélie',                              year: 2001, genres: ['Comedy', 'Romance'] },
+  { id: 108190, tmdbId: 152601, title: 'Her',                                 year: 2013, genres: ['Drama', 'Romance', 'Sci-Fi'] },
+  { id: 3468,   tmdbId: 843,    title: 'Before Sunrise',                      year: 1995, genres: ['Drama', 'Romance'] },
+  // Mystery (extra)
+  { id: 193609, tmdbId: 546554, title: 'Knives Out',                          year: 2019, genres: ['Comedy', 'Crime', 'Mystery', 'Thriller'] },
+  { id: 905,    tmdbId: 4778,   title: 'Rear Window',                         year: 1954, genres: ['Mystery', 'Thriller'] },
+  // Sci-Fi (extra)
+  { id: 168252, tmdbId: 329865, title: 'Arrival',                             year: 2016, genres: ['Drama', 'Mystery', 'Sci-Fi'] },
+  { id: 2761,   tmdbId: 62,     title: '2001: A Space Odyssey',               year: 1968, genres: ['Mystery', 'Sci-Fi'] },
+  // Animation (extra)
+  { id: 175303, tmdbId: 354912, title: 'Coco',                                year: 2017, genres: ['Animation', 'Adventure', 'Comedy', 'Fantasy', 'Musical'] },
+  { id: 193886, tmdbId: 324857, title: 'Spider-Man: Into the Spider-Verse',   year: 2018, genres: ['Action', 'Animation', 'Adventure'] },
+  // Comedy (extra)
+  { id: 52973,  tmdbId: 8363,   title: 'Superbad',                            year: 2007, genres: ['Comedy'] },
+  { id: 3751,   tmdbId: 9603,   title: 'The Breakfast Club',                  year: 1985, genres: ['Comedy', 'Drama'] },
+  // Drama (extra)
+  { id: 162376, tmdbId: 376867, title: 'Moonlight',                           year: 2016, genres: ['Drama'] },
+  { id: 110553, tmdbId: 209112, title: 'Boyhood',                             year: 2014, genres: ['Drama'] },
+  { id: 120466, tmdbId: 37799,  title: 'The Social Network',                  year: 2010, genres: ['Drama'] },
 ]
 
 // Pick exactly one random film from each of the 12 key genres
@@ -248,9 +282,11 @@ export default function Home() {
   const [selectedRec, setSelectedRec] = useState<number | null>(null)
   const [feedbackStats, setFeedbackStats] = useState<{ up: number; total: number } | null>(null)
   const [blendScores, setBlendScores]     = useState<Record<number, number>>({})
+  const [rawBlended, setRawBlended]       = useState<Record<number, { score: number; title: string; genres: string }>>({})
   const [neighbors, setNeighbors]         = useState<Array<{ uid: number; sim: number }>>([])
   const [allUVecs, setAllUVecs]           = useState<Record<number, Record<string, number>>>({})
   const [showCounterfactual, setShowCounterfactual] = useState(false)
+  const [recencyBoost, setRecencyBoost] = useState(true)
   // A/B test: randomly assign 'hybrid' (neighbourhood blend, current) vs 'als' (single twin, control)
   const [variant] = useState<'hybrid' | 'als'>(() => Math.random() < 0.5 ? 'hybrid' : 'als')
   const cardStackRef = useRef<SwipeableCardStackHandle>(null)
@@ -329,41 +365,60 @@ export default function Home() {
     const vVec: Record<string, number> = {}
     if (mag > 0) for (const [g, s] of Object.entries(w)) vVec[g] = s / mag
 
-    const { data: profiles, error: pe } = await supabase
-      .from('user_genre_profiles').select('user_id, genre, score')
-    if (pe || !profiles) { setError(pe?.message ?? 'Error'); setStep('rate'); return }
+    // Build fixed-dimension genre embedding (19 genres, same order as user_profiles.py)
+    const GENRE_ORDER = [
+      'Action','Adventure','Animation','Children','Comedy','Crime',
+      'Documentary','Drama','Fantasy','Film-Noir','Horror','IMAX',
+      'Musical','Mystery','Romance','Sci-Fi','Thriller','War','Western',
+    ]
+    const queryEmbedding = GENRE_ORDER.map(g => vVec[g] ?? 0)
 
-    const uVecs: Record<number, Record<string, number>> = {}
-    for (const r of profiles) {
-      if (!uVecs[r.user_id]) uVecs[r.user_id] = {}
-      uVecs[r.user_id][r.genre] = r.score
+    // Server-side nearest-neighbour search via pgvector RPC — searches all 323K users
+    const { data: twinRows, error: te } = await supabase.rpc('find_twin', {
+      query_embedding: queryEmbedding,
+      match_count: 20,
+      min_similarity: 0.1,
+    })
+    if (te || !twinRows || twinRows.length === 0) {
+      setError(te?.message ?? 'Not enough signal yet — try liking a few more films.')
+      setStep('rate')
+      return
     }
-
-    // Rank all users by similarity, keep top-5 neighbors
-    const NEIGHBORS = 5
-    const MIN_SIMILARITY = 0.1  // Improvement #3: threshold below which neighbors aren't useful
-    const ranked = Object.entries(uVecs)
-      .map(([uid, vec]) => ({ uid: parseInt(uid), sim: cosineSim(vec, vVec) }))
-      .sort((a, b) => b.sim - a.sim)
-      .slice(0, NEIGHBORS)
-      .filter(n => n.sim >= MIN_SIMILARITY)
-
-    // Improvement #3: if no neighbors meet the threshold, ask for more ratings
-    if (ranked.length === 0) {
-      setError('Not enough signal yet — try liking a few more films.')
+    // Display twin = first result (true nearest match across all 323K users)
+    // Rec source twins = results where has_recs = true (ALS-trained users)
+    const displayTwin = twinRows[0] as { user_id: number; similarity: number; has_recs: boolean }
+    const recSourceRows = (twinRows as Array<{ user_id: number; similarity: number; has_recs: boolean }>)
+      .filter(r => r.has_recs)
+    if (recSourceRows.length === 0) {
+      setError('No recommendations available for your taste profile — try rating a few more films.')
       setStep('rate')
       return
     }
 
-    setNeighbors(ranked)
+    // For counterfactuals we still need genre profiles of the matched neighbours only
+    const neighborIds = recSourceRows.map(r => r.user_id)
+    const { data: neighborProfiles } = await supabase
+      .from('user_genre_profiles').select('user_id, genre, score')
+      .in('user_id', neighborIds)
+    const uVecs: Record<number, Record<string, number>> = {}
+    for (const r of (neighborProfiles ?? [])) {
+      if (!uVecs[r.user_id]) uVecs[r.user_id] = {}
+      uVecs[r.user_id][r.genre] = r.score
+    }
+
+    // ranked uses displayTwin as first entry so the UI shows the true nearest match
+    const rankedDisplay: Array<{ uid: number; sim: number }> = [
+      { uid: displayTwin.user_id, sim: displayTwin.similarity },
+      ...recSourceRows.filter(r => r.user_id !== displayTwin.user_id).map(r => ({ uid: r.user_id, sim: r.similarity })),
+    ]
+    setNeighbors(rankedDisplay)
     setAllUVecs(uVecs)
-    const best = ranked[0].uid  // film twin shown in the UI
+    const best = recSourceRows[0].user_id  // rec source twin (must have ALS recs)
 
     // Improvement #1: IDs of films already shown in onboarding — exclude from recommendations
     const seenMovieIds = new Set(FILMS.map(f => f.id))
 
-    // Fetch recommendations for all neighbors in one query
-    const neighborIds = ranked.map(n => n.uid)
+    // Fetch recommendations for all rec-source neighbors in one query
     const { data: recData, error: re } = await supabase
       .from('recommendations').select('user_id, rank, movie_id, title, genres')
       .in('user_id', neighborIds)
@@ -371,7 +426,7 @@ export default function Home() {
 
     // Blend scores: each film gets similarity-weighted rank score from each neighbor.
     // score(film) = Σ sim(neighbor) × (1 / rank)  — higher rank → higher contribution
-    const simByUser = Object.fromEntries(ranked.map(n => [n.uid, n.sim]))
+    const simByUser = Object.fromEntries(recSourceRows.map(r => [r.user_id, r.similarity]))
     const blended: Record<number, { score: number; title: string; genres: string }> = {}
     for (const r of recData as (Recommendation & { user_id: number })[]) {
       if (seenMovieIds.has(r.movie_id)) continue  // Improvement #1: skip already-seen films
@@ -379,13 +434,30 @@ export default function Home() {
       if (!blended[r.movie_id]) blended[r.movie_id] = { score: 0, title: r.title, genres: r.genres }
       blended[r.movie_id].score += contrib
     }
+    // Step-curve recency: 2010+ = 1.0, 2000s = 0.4, pre-2000 = 0.0
+    const recencyScore = (title: string) => {
+      const y = parseInt(title.match(/\((\d{4})\)\s*$/)?.[1] ?? '1985')
+      if (y >= 2010) return 1.0
+      if (y >= 2000) return 0.4
+      return 0.0
+    }
+
+    const rawScores = Object.fromEntries(Object.entries(blended).map(([id, { score }]) => [parseInt(id), score]))
+    const maxRaw = Math.max(...Object.values(rawScores))
+
+    const finalScore = (id: number, title: string) => {
+      const norm = maxRaw > 0 ? (rawScores[id] ?? 0) / maxRaw : 0
+      return recencyBoost ? 0.6 * norm + 0.4 * recencyScore(title) : norm
+    }
+
     const merged: Recommendation[] = Object.entries(blended)
-      .sort(([, a], [, b]) => b.score - a.score)
+      .sort(([idA, a], [idB, b]) => finalScore(parseInt(idB), b.title) - finalScore(parseInt(idA), a.title))
       .slice(0, 10)
       .map(([movie_id, { title, genres }], i) => ({
         rank: i + 1, movie_id: parseInt(movie_id), title, genres,
       }))
 
+    setRawBlended(blended)
     setBlendScores(Object.fromEntries(Object.entries(blended).map(([id, { score }]) => [parseInt(id), score])))
     const recList = diversifyRecs(merged)
     setRecs(recList)
@@ -477,8 +549,31 @@ export default function Home() {
 
   function restart() {
     setStep('rate'); setIndex(0); setVotes({}); setRecs([]); setUserVec({}); setMatchedUser(null); setError('')
-    setBlendScores({}); setNeighbors([]); setAllUVecs({}); setShowCounterfactual(false)
+    setBlendScores({}); setNeighbors([]); setAllUVecs({}); setShowCounterfactual(false); setRawBlended({})
   }
+
+  // Re-rank recs when recency toggle changes (after first load)
+  useEffect(() => {
+    if (Object.keys(rawBlended).length === 0) return
+    // Step-curve recency: 2010+ = 1.0, 2000s = 0.4, pre-2000 = 0.0
+    const recencyScore = (title: string) => {
+      const y = parseInt(title.match(/\((\d{4})\)\s*$/)?.[1] ?? '1985')
+      if (y >= 2010) return 1.0
+      if (y >= 2000) return 0.4
+      return 0.0
+    }
+    const rawScores = Object.fromEntries(Object.entries(rawBlended).map(([id, { score }]) => [parseInt(id), score]))
+    const maxRaw = Math.max(...Object.values(rawScores))
+    const finalScore = (id: number, title: string) => {
+      const norm = maxRaw > 0 ? (rawScores[id] ?? 0) / maxRaw : 0
+      return recencyBoost ? 0.6 * norm + 0.4 * recencyScore(title) : norm
+    }
+    const merged: Recommendation[] = Object.entries(rawBlended)
+      .sort(([idA, a], [idB, b]) => finalScore(parseInt(idB), b.title) - finalScore(parseInt(idA), a.title))
+      .slice(0, 10)
+      .map(([movie_id, { title, genres }], i) => ({ rank: i + 1, movie_id: parseInt(movie_id), title, genres }))
+    setRecs(diversifyRecs(merged))
+  }, [recencyBoost, rawBlended])
 
   // ── MODALS ────────────────────────────────────────────────────────────────
   const modalContent: Record<string, { title: string; rows: { n: string; head: string; body: string }[] }> = {
@@ -491,11 +586,11 @@ export default function Home() {
         },
         {
           n: '02', head: `Viewer #${matchedUser} is your nearest match`,
-          body: `We compared your genre vector against the profiles of all 610 real MovieLens viewers using cosine similarity — a measure of how closely two taste profiles point in the same direction. Viewer #${matchedUser} had the highest similarity score with you.`,
+          body: `We compared your genre vector against the profiles of all 323,733 real MovieLens viewers using cosine similarity — a measure of how closely two taste profiles point in the same direction. Viewer #${matchedUser} had the highest similarity score with you.`,
         },
         {
           n: '03', head: 'These are their top films',
-          body: `The recommendations you see are films that Viewer #${matchedUser} rated highly — predicted by an Apache Spark ALS model trained on 100,836 ratings. Since their taste is closest to yours, their favourites are your best discovery list.`,
+          body: `The recommendations you see are films that Viewer #${matchedUser} rated highly — predicted by an Apache Spark ALS model trained on 33.8M ratings. Since their taste is closest to yours, their favourites are your best discovery list.`,
         },
       ],
     },
@@ -508,7 +603,7 @@ export default function Home() {
         },
         {
           n: '02', head: 'Cosine similarity match',
-          body: 'Your likes are turned into a genre preference vector (e.g. 60% Action, 40% Drama). We compare that against the genre profiles of all 610 real MovieLens viewers and find the one whose taste is closest to yours.',
+          body: 'Your likes are turned into a genre preference vector (e.g. 60% Action, 40% Drama). We compare that against the genre profiles of all 323,733 real MovieLens viewers and find the one whose taste is closest to yours.',
         },
         {
           n: '03', head: 'Personalised recommendations',
@@ -520,16 +615,16 @@ export default function Home() {
       title: 'The data',
       rows: [
         {
-          n: '—', head: 'MovieLens ml-latest-small',
-          body: '100,836 ratings from 610 real users across 9,742 films. Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 to 5.0.',
+          n: '—', head: 'MovieLens ml-latest',
+          body: '33.8M ratings from 330,975 real users across 86,537 films up to 2023. Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 to 5.0.',
         },
         {
           n: '—', head: 'Apache Spark ALS',
-          body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=20, regParam=0.1) running on Apache Spark. The model achieves RMSE ≈ 0.83 on a held-out test set.',
+          body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=10, regParam=0.05) running on Apache Spark. Trained on a 10% sample (32,813 users). RMSE 0.82 on a held-out test set.',
         },
         {
           n: '—', head: 'Genre profiles in Supabase',
-          body: 'For each of the 610 users, a unit-normalised genre preference vector is precomputed from their liked ratings and stored in Supabase. The browser fetches all 9,295 rows and runs the cosine similarity in-memory — no server round-trip needed.',
+          body: 'For each of the 323,733 users, a unit-normalised genre preference vector is precomputed and stored as a pgvector embedding in Supabase. The browser sends your genre vector and the database returns your top-20 nearest neighbours using an HNSW index — no bulk download needed.',
         },
       ],
     },
@@ -638,7 +733,7 @@ export default function Home() {
                 <div style={{ background: CREAM, borderRadius: 12, padding: '20px', marginBottom: 20, border: `1px solid ${BORDER}` }}>
                   <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 6 }}>Nearest viewer</div>
                   <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 44, color: ACCENT, lineHeight: 1 }}>#{twin.uid}</div>
-                  <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginTop: 4 }}>out of 610 real MovieLens viewers</div>
+                  <div style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, marginTop: 4 }}>out of 32,813 real MovieLens viewers</div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
                   <div style={{ background: CREAM, borderRadius: 10, padding: '14px 16px', border: `1px solid ${BORDER}` }}>
@@ -688,9 +783,9 @@ export default function Home() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: CREAM, borderRadius: 12, margin: '20px 0', overflow: 'hidden', border: `1px solid ${BORDER}` }}>
                 {[
-                  { n: '100,836', label: 'Ratings' },
-                  { n: '610',     label: 'Real viewers' },
-                  { n: '9,742',   label: 'Films' },
+                  { n: '33.8M', label: 'Ratings' },
+                  { n: '32,813',  label: 'Real viewers' },
+                  { n: '86,537',  label: 'Films' },
                   {
                     n: feedbackStats && feedbackStats.total > 0
                       ? `${Math.round((feedbackStats.up / feedbackStats.total) * 100)}%`
@@ -705,9 +800,9 @@ export default function Home() {
                 ))}
               </div>
               {[
-                { tag: 'Dataset', head: 'MovieLens ml-latest-small', body: 'Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 – 5.0.', badge: 'GroupLens · UMN' },
-                { tag: 'Model', head: 'Apache Spark ALS', body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=20, regParam=0.1). RMSE ≈ 0.83 on a held-out test set.', badge: 'RMSE 0.83' },
-                { tag: 'Matching', head: 'Genre profiles in Supabase', body: 'A unit-normalised genre vector is precomputed per user and stored in Supabase. The browser fetches all 9,295 rows and runs cosine similarity in-memory — no extra server round-trip.', badge: '9,295 rows' },
+                { tag: 'Dataset', head: 'MovieLens ml-latest', body: 'Collected by the GroupLens research lab at the University of Minnesota. Each rating is a score from 0.5 – 5.0. Updated to 2023.', badge: 'GroupLens · UMN' },
+                { tag: 'Model', head: 'Apache Spark ALS', body: 'Ratings are factorised using Alternating Least Squares collaborative filtering (rank=10, regParam=0.05). Trained on 32,813 users. RMSE 0.82 on held-out test set.', badge: 'RMSE 0.82' },
+                { tag: 'Matching', head: 'Genre profiles in Supabase', body: 'A unit-normalised genre vector is precomputed per user and stored in Supabase. The browser sends your vector and the database returns top-20 nearest neighbours via pgvector RPC — no bulk download.', badge: '323,733 users' },
               ].map((card, i) => (
                 <div key={i} style={{ display: 'flex', gap: 16, padding: '16px 0', borderTop: `1px solid ${BORDER}` }}>
                   <div style={{ width: 68, flexShrink: 0 }}>
@@ -795,7 +890,7 @@ export default function Home() {
               fontFamily: "'Hanken Grotesk', sans-serif", maxWidth: 420,
             }}>
               Rate 12 films you know. We match you with the real
-              viewer — out of 610 — whose taste is closest to yours,
+              viewer — out of 32,813 — whose taste is closest to yours,
               then show you what they loved.
             </p>
             <div style={{ marginTop: 32, display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -821,7 +916,7 @@ export default function Home() {
             borderTop: `1px solid #2E2A25`, paddingTop: 24,
             display: 'flex', gap: 40,
           }}>
-            {[['610', 'Viewers'], ['9,742', 'Films'], ['100K', 'Ratings']].map(([n, l]) => (
+            {[['331K', 'Viewers'], ['86K', 'Films'], ['33.8M', 'Ratings']].map(([n, l]) => (
               <div key={l}>
                 <div style={{
                   fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
@@ -839,13 +934,13 @@ export default function Home() {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '40px 48px',
         }}>
-          {/* 610 watermark */}
+          {/* viewer count watermark */}
           <div style={{
             position: 'absolute', bottom: -40, right: -20,
             fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
-            fontSize: 340, lineHeight: 1, color: '#EDE8DF', userSelect: 'none',
+            fontSize: 220, lineHeight: 1, color: '#EDE8DF', userSelect: 'none',
             pointerEvents: 'none', letterSpacing: '-0.04em',
-          }}>610</div>
+          }}>32K</div>
 
           {/* Demo card */}
           <div style={{
@@ -909,7 +1004,7 @@ export default function Home() {
                   fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
                   fontSize: 44, color: ACCENT, lineHeight: 1, textTransform: 'uppercase',
                 }}>Viewer #26</span>
-                <span style={{ fontSize: 12, color: MUTED, fontFamily: "'Hanken Grotesk', sans-serif" }}>of 610 viewers</span>
+                <span style={{ fontSize: 12, color: MUTED, fontFamily: "'Hanken Grotesk', sans-serif" }}>of 32,813 viewers</span>
               </div>
             </div>
 
@@ -1172,9 +1267,9 @@ export default function Home() {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 280 }}>
         {[
-          'Fetching 610 viewer profiles',
+          'Fetching viewer profiles',
           'Computing cosine similarity',
-          'Blending top-5 neighbours',
+          'Blending top-20 neighbours',
           'Ranking recommendations',
         ].map((label, i) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite` }}>
@@ -1245,6 +1340,20 @@ export default function Home() {
             padding: '0 11px', height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5,
           }}>
             ◉ Twin
+          </button>
+          <button
+            onClick={() => setRecencyBoost(v => !v)}
+            title={recencyBoost ? 'Showing 2010s films — click to include all eras' : 'All eras — click to prefer 2010s films'}
+            style={{
+              background: recencyBoost ? 'rgba(194,65,12,0.18)' : 'rgba(255,255,255,0.07)',
+              border: recencyBoost ? `1px solid rgba(194,65,12,0.35)` : `1px solid rgba(255,255,255,0.14)`,
+              cursor: 'pointer',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+              color: recencyBoost ? ACCENT : 'rgba(255,255,255,0.5)', letterSpacing: '0.06em',
+              padding: '0 11px', height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            ◷ Recent
           </button>
           <Link href="/model" style={{
             background: 'rgba(194,65,12,0.18)', border: `1px solid rgba(194,65,12,0.35)`, cursor: 'pointer',
@@ -1555,7 +1664,7 @@ export default function Home() {
                 Were these recommendations good?
               </div>
               <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED }}>
-                Your film twin is Viewer #{matchedUser} out of 610 real viewers.
+                Your film twin is Viewer #{matchedUser} out of 32,813 real viewers.
               </p>
             </div>
             <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
@@ -1635,7 +1744,7 @@ export default function Home() {
         padding: '0 20px', borderTop: `1px solid #1A1612`, background: '#0E0C0A',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Eyebrow color={'#2E2924'}>Spark ALS · rank=20 · regParam=0.1 · matched viewer #{matchedUser}</Eyebrow>
+          <Eyebrow color={'#2E2924'}>Spark ALS · rank=10 · regParam=0.05 · matched viewer #{matchedUser}</Eyebrow>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: 3, background: variant === 'hybrid' ? 'rgba(194,65,12,0.15)' : 'rgba(138,130,120,0.15)', color: variant === 'hybrid' ? ACCENT : '#4A443E', border: `1px solid ${variant === 'hybrid' ? 'rgba(194,65,12,0.25)' : 'rgba(138,130,120,0.2)'}` }}>
             {variant === 'hybrid' ? 'A/B: blend' : 'A/B: als'}
           </span>

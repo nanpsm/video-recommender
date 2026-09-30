@@ -12,7 +12,7 @@ const NEGATIVE  = '#EF4444'
 const FAINT   = '#B9B1A3'
 
 // uv run python -m video_recommender.evaluate
-// MovieLens ml-latest-small · 80/20 split · K=10 · liked_threshold=4.0
+// MovieLens ml-latest · 80/20 split · K=10 · liked_threshold=4.0
 const BASELINES = [
   { name: 'Random',           precision: 0.0019, recall: 0.0023, ndcg: 0.0028, hitRate: 0.0186, n: 592, note: 'Chance baseline' },
   { name: 'Popularity',       precision: 0.1231, recall: 0.0994, ndcg: 0.1622, hitRate: 0.5591, n: 592, note: 'Most-rated films', bestPrecision: true },
@@ -23,13 +23,14 @@ const BASELINES = [
 
 // uv run python -m video_recommender.cold_start
 // Simulates each user having only K liked ratings; evaluates hybrid recs on held-out 20%
+// ml-latest 10% sample · 32,813 users · rank=10 · regParam=0.05 · liked_threshold=4.0
 const COLD_START = [
-  { k: 5,  ndcg: 0.0193, precision: 0.0157, recall: 0.0101, hitRate: 0.1274, stability: 0.0457, n: 581 },
-  { k: 8,  ndcg: 0.0183, precision: 0.0168, recall: 0.0133, hitRate: 0.1319, stability: 0.0810, n: 561 },
-  { k: 12, ndcg: 0.0183, precision: 0.0183, recall: 0.0133, hitRate: 0.1467, stability: 0.1133, n: 525 },
-  { k: 16, ndcg: 0.0211, precision: 0.0209, recall: 0.0148, hitRate: 0.1609, stability: 0.1094, n: 460 },
-  { k: 20, ndcg: 0.0234, precision: 0.0238, recall: 0.0138, hitRate: 0.1584, stability: 0.1473, n: 404 },
-  { k: 30, ndcg: 0.0234, precision: 0.0245, recall: 0.0114, hitRate: 0.1903, stability: 0.1989, n: 310 },
+  { k: 5,  ndcg: 0.0036, precision: 0.0023, recall: 0.0039, hitRate: 0.0206, stability: 0.0263, n: 24256 },
+  { k: 8,  ndcg: 0.0037, precision: 0.0026, recall: 0.0037, hitRate: 0.0225, stability: 0.0249, n: 21328 },
+  { k: 12, ndcg: 0.0030, precision: 0.0023, recall: 0.0027, hitRate: 0.0201, stability: 0.0305, n: 18274 },
+  { k: 16, ndcg: 0.0032, precision: 0.0025, recall: 0.0025, hitRate: 0.0224, stability: 0.0403, n: 16067 },
+  { k: 20, ndcg: 0.0033, precision: 0.0027, recall: 0.0022, hitRate: 0.0230, stability: 0.0510, n: 14343 },
+  { k: 30, ndcg: 0.0031, precision: 0.0026, recall: 0.0017, hitRate: 0.0222, stability: 0.0727, n: 11175 },
 ]
 
 // uv run python -m video_recommender.bias_audit
@@ -68,14 +69,14 @@ const METRICS = [
 
 const MODEL_CARDS = [
   {
-    tag: 'Dataset', title: 'MovieLens ml-latest-small',
-    body: '100,836 ratings from 610 users across 9,742 films. Collected by the GroupLens research lab at the University of Minnesota. Each rating is 0.5 – 5.0. 80% used for training, 20% held out for evaluation.',
-    badges: ['610 users', '9,742 films', '80/20 split'],
+    tag: 'Dataset', title: 'MovieLens ml-latest',
+    body: '33.8M ratings from 330,975 users across 86,537 films up to 2023. Collected by the GroupLens research lab at the University of Minnesota. Each rating is 0.5 – 5.0. 80% used for training, 20% held out for evaluation.',
+    badges: ['330,975 users', '86,537 films', '80/20 split'],
   },
   {
     tag: 'Model', title: 'Apache Spark ALS',
-    body: 'Alternating Least Squares matrix factorisation. Latent factors capture shared taste patterns that genre labels miss. Trained with rank=20, regParam=0.1, maxIter=10. RMSE ≈ 0.83 on the held-out test set.',
-    badges: ['rank=20', 'regParam=0.1', 'RMSE 0.83'],
+    body: 'Alternating Least Squares matrix factorisation. Latent factors capture shared taste patterns that genre labels miss. Trained on 10% sample (32,813 users) with rank=10, regParam=0.05, maxIter=10. RMSE 0.82 on held-out test set (baseline 0.97).',
+    badges: ['rank=10', 'regParam=0.05', 'RMSE 0.82'],
   },
   {
     tag: 'Hybrid', title: 'ALS + Genre scoring',
@@ -84,8 +85,8 @@ const MODEL_CARDS = [
   },
   {
     tag: 'Matching', title: 'Top-5 neighbourhood blending',
-    body: 'A unit-normalised genre preference vector is stored per user in Supabase. The browser fetches all 9,295 rows and runs cosine similarity in-memory. The top-5 nearest neighbours blend their recommendations: score(film) = Σ sim(neighbour) × (1/rank). Threshold: cosine sim ≥ 0.1.',
-    badges: ['Top-5 blend', 'Cosine sim', '9,295 rows'],
+    body: 'A unit-normalised genre preference vector is stored per user in Supabase (323,733 users). Server-side pgvector RPC searches all 323K users and returns the top-20 nearest neighbours by cosine similarity. The true nearest match is shown as the Film Twin identity; recommendations are blended from ALS-trained neighbours: score(film) = Σ sim(neighbour) × (1/rank). Threshold: cosine sim ≥ 0.1.',
+    badges: ['Top-20 search', 'pgvector RPC', '323,733 users'],
   },
 ]
 
@@ -128,13 +129,13 @@ export default function ModelPage() {
 
         {/* Title */}
         <div style={{ marginBottom: 48 }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>Offline evaluation · MovieLens ml-latest-small</div>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ACCENT, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8 }}>Offline evaluation · MovieLens ml-latest</div>
           <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 'clamp(40px, 6vw, 72px)', color: DARK, textTransform: 'uppercase', lineHeight: 0.9, letterSpacing: '-0.02em' }}>
             MODEL<br />
             <span style={{ color: ACCENT }}>METRICS</span>
           </div>
           <p style={{ marginTop: 16, fontSize: 15, color: MUTED, maxWidth: 600, lineHeight: 1.65 }}>
-            Five recommendation baselines evaluated on a held-out 20% test set. Only users with at least one liked test film are included — 592 of 610 users. Liked threshold: rating ≥ 4.0.
+            Five recommendation baselines evaluated on a held-out 20% test set. Model trained on a 10% sample of ml-latest (32,813 users). Evaluation metrics below are from a ml-latest-small baseline comparison — re-running evaluate.py on the full sample is pending. Liked threshold: rating ≥ 4.0.
           </p>
           <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(194,65,12,0.06)', border: `1px solid rgba(194,65,12,0.18)`, borderRadius: 10, maxWidth: 600 }}>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: ACCENT, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Note</span>
@@ -265,7 +266,7 @@ export default function ModelPage() {
         </p>
         <div style={{ background: 'rgba(194,65,12,0.06)', border: `1px solid rgba(194,65,12,0.18)`, borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
           <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
-            <strong style={{ color: DARK }}>Key finding:</strong> NDCG plateaus at K≈20 (0.0234) and doesn't improve with 30 ratings. K=5 outperforms K=8–12 on NDCG due to sample selection — at K=5 more users qualify (N=581 vs 525), skewing toward users with richer rating histories. <strong style={{ color: DARK }}>Twin stability is low across all K</strong> — even at K=30 only 20% of twins remain stable across random rating perturbations, suggesting the "Film Twin" claim should be communicated with some uncertainty.
+            <strong style={{ color: DARK }}>Key finding:</strong> NDCG is flat across all K values (0.0030–0.0037) — more ratings do not meaningfully improve recommendation quality. K=8 edges out the others (NDCG 0.0037). The app uses K=12 for a balance of twin stability and onboarding length. <strong style={{ color: DARK }}>Twin stability is low across all K</strong> — even at K=30 only 7.3% of twins remain stable across random rating perturbations, suggesting the "Film Twin" identity should be communicated with some uncertainty. Evaluated on 32,813 users (ml-latest 10% sample).
           </p>
         </div>
         <div style={{ overflowX: 'auto', marginBottom: 48 }}>
@@ -305,7 +306,7 @@ export default function ModelPage() {
         {/* Popularity bias audit */}
         <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: 22, color: DARK, textTransform: 'uppercase', letterSpacing: '-0.01em', marginBottom: 8 }}>Popularity Bias Audit</div>
         <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 14, color: MUTED, marginBottom: 16, lineHeight: 1.65 }}>
-          Measures catalog coverage, popularity distribution, novelty, and intra-list diversity across all 610 users&apos; hybrid recommendations.
+          Measures catalog coverage, popularity distribution, novelty, and intra-list diversity. Numbers below are from the ml-latest-small baseline (610 users); audit on the 32,813-user model is pending.
         </p>
 
         {/* Key stats grid */}
@@ -328,7 +329,7 @@ export default function ModelPage() {
 
         <div style={{ background: 'rgba(239,68,68,0.05)', border: `1px solid rgba(239,68,68,0.15)`, borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
           <p style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
-            <strong style={{ color: DARK }}>Anti-popularity finding:</strong> The model recommends only 7.1% of the catalog (687 films). Despite a neutral popularity ratio (1.00×), the top recommended film — <em>Five Easy Pieces</em> — has only 7 ratings but gets recommended to 260 of 610 users. The model concentrates on niche films highly rated by a small number of users whose taste profiles match many visitors. This is a coverage problem, not a mainstream popularity bias.
+            <strong style={{ color: DARK }}>Anti-popularity finding (ml-latest-small baseline):</strong> The model recommended only 7.1% of the catalog (687 films). Despite a neutral popularity ratio (1.00×), the top recommended film — <em>Five Easy Pieces</em> — had only 7 ratings but was recommended to 260 of 610 users. The model concentrates on niche films highly rated by a small group whose taste profiles match many visitors. This is a coverage problem, not a mainstream popularity bias.
           </p>
         </div>
 
@@ -336,7 +337,7 @@ export default function ModelPage() {
         <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 14, overflow: 'hidden', marginBottom: 48 }}>
           <div style={{ padding: '14px 20px', borderBottom: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontFamily: "'Hanken Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: DARK }}>Top 10 most recommended films</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED }}>across 610 users</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: MUTED }}>ml-latest-small baseline · 610 users</span>
           </div>
           {BIAS.top10.map((film, i) => (
             <div key={film.title} style={{ display: 'grid', gridTemplateColumns: '28px 1fr 80px 80px', gap: 16, padding: '12px 20px', borderBottom: i < BIAS.top10.length - 1 ? `1px solid ${BORDER}` : 'none', alignItems: 'center' }}>
@@ -387,7 +388,7 @@ export default function ModelPage() {
 
         {/* Footer note */}
         <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT }}>Liked threshold: rating ≥ 4.0 · K=10 · seed=42 · evaluated on 592 users</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT }}>Liked threshold: rating ≥ 4.0 · K=10 · seed=42 · baseline evaluated on 592 users (ml-latest-small) · model trained on 32,813 users (ml-latest 10%)</span>
           <a href="https://grouplens.org/datasets/movielens/" target="_blank" rel="noreferrer" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: FAINT, textDecoration: 'none' }}>grouplens.org ↗</a>
         </div>
       </div>
